@@ -93,8 +93,7 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	thread_park (start, ticks);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -126,6 +125,24 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+
+	if (!thread_mlfqs) {
+		thread_try_unpark (ticks);
+		return;
+	}
+	
+	thread_increase_recent_cpu (thread_current ());
+	if (ticks % TIMER_FREQ == 0) {
+		thread_update_load_avg ();
+		thread_update_recent_cpu_all ();
+		thread_update_priority_all ();
+	}
+
+	if (ticks % TIME_SLICE == 0 && ticks % TIMER_FREQ != 0) {
+		thread_update_priority_all ();
+	}
+
+	thread_try_unpark (ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
