@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <fixed.h>
 #include "threads/interrupt.h"
 #ifdef VM
 #include "vm/vm.h"
@@ -27,6 +28,9 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+/* Scheduling. */
+#define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 
 /* A kernel thread or user process.
  *
@@ -91,10 +95,17 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
-
+	int prev_priority;					/* Priority before lock_acquire */
+	int64_t parked;						/* Parked ticks. */
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
-
+	struct list donations;				/* Donation list. */
+	struct list_elem delem;				/* Donation list element. */
+	struct lock *lock;					/* Lock this thread waits. */
+	/* BSD Scheduling */
+	struct list_elem telem;				/* Thread list element. */
+	int nice;							/* Niceness */
+	fixed recent_cpu;					/* Recent CPU time. */
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -118,10 +129,13 @@ void thread_init (void);
 void thread_start (void);
 
 void thread_tick (void);
+void thread_park (int64_t start, int64_t ticks);
+void thread_try_unpark (int64_t ticks);
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
-tid_t thread_create (const char *name, int priority, thread_func *, void *);
+tid_t thread_create (const char *name, int priority, 
+				thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
@@ -132,15 +146,28 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+bool thread_yield_if (bool predicate);
+bool thread_yield_priority (void);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
 
+/* BSD scheduler */
 int thread_get_nice (void);
-void thread_set_nice (int);
+void thread_set_nice (int nice UNUSED);
 int thread_get_recent_cpu (void);
+void thread_update_recent_cpu (struct thread* thrd);
 int thread_get_load_avg (void);
+void thread_update_load_avg (void);
+void thread_update_priority (struct thread* thrd);
+fixed get_decay (void);
+void thread_update_priority_all (void);
+void thread_update_recent_cpu_all (void);
+void thread_increase_recent_cpu (struct thread* thrd);
 
 void do_iret (struct intr_frame *tf);
-
+bool cmp_thrd_priorities (const struct list_elem *, 
+					const struct list_elem *, void *aux UNUSED);
+bool cmp_thrd_donation_priorities (const struct list_elem *, 
+					const struct list_elem *, void *aux UNUSED);
 #endif /* threads/thread.h */
