@@ -224,6 +224,9 @@ lock_acquire (struct lock *lock) {
 
 			cursor->priority = max_priority;
 			cursor = cursor->lock->holder;
+			if (cursor == NULL) {
+				break;
+			}
 		}
 
 		if (cursor != NULL) {
