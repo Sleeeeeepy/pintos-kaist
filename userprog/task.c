@@ -98,6 +98,10 @@ task_inherit_initd (struct task *t) {
 
 	ASSERT (initd != NULL);
 
+	if (initd == NULL) {
+		return;
+	}
+	
 	if (initd == t) {
 		return;
 	}

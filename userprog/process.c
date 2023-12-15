@@ -316,6 +316,11 @@ process_exit (void) {
 	/* If the current process has children, remove children. 
 	 * If there is child processes that aren't complete its task,
 	 * make its parent process to initd. 
+	 * 
+	 * Note that this assumption will fail: in the current situation, 
+	 * this project's initd may not wait for another program to exit. 
+	 * It's named daemon, but it's not actually a daemon, 
+	 * which could potentially cause an error.
 	 */
 	if (task_child_len (task) != 0) {
 		task_inherit_initd (task);
