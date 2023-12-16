@@ -195,7 +195,7 @@ __do_fork (void *aux) {
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+	if (!supplemental_page_table_copy (&current->spt, &parent->thread->spt))
 		goto error;
 #else
 	if (!pml4_for_each (parent->thread->pml4, duplicate_pte, parent->thread))
