@@ -4,6 +4,9 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
+#include "thread.h"
+#include "interrupt.h"
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -150,8 +153,15 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* 페이지 결함을 처리하는 함수
 	 * 주어진 주소 (addr)에 대해 페이지 결함이 발생했을 때
 	 * 해당 결함을 처리하는 로직을 구현
-	 * 1. 주소가 유효한 지 확인 후 필요한 경우 페이지를 할당하고, 아닌 경우 기존 페이지를 수정
+	 * 
+	 * 스택 접근을 감지하고 처리하는 로직을 추가한다
+	 * 1. 스택 접근을 감지해서 스택 확장을 위한 것인지, 아니면 무효한 메모리 접근인지 판별
+	 * 1-1. 스택 포인터보다 낮은 주소지만 일정범위 내(32바이트)에 있는 접근을 스택 확장으로 간주
+	 * 1-2. 무효한 메모리 접근일 때는 프로세스를 종료하고 오류메시지 출력
 	 */
+	void *stack_pointer = f->rsp;
+
+	
 
 	return vm_do_claim_page (page);
 }
