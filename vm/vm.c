@@ -9,8 +9,7 @@
 #include "vaddr.h"
 #include "threads/palloc.h"
 
-
-#define MAX_STACK_SIZE 0x1 << 20
+const MAX_STACK_SIZE 0x1 << 20
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -126,52 +125,50 @@ vm_get_frame (void) {
 	return frame;
 }
 
-/* Growing the stack. */
-static bool
+/* Growing the stack.
+ * Function to increase the stack
+ * Process to increase the stack from the position specified by the address (addr)
+ * Current stack size is fixed at 4KB -> Implement to expand up to a maximum of 1MB
+ * 1. If the address is within the stack area, implement logic to increase the stack and allocate necessary pages
+ * 1-1. Implement a function to check if the address belongs to the stack area -> already implemented in vm_try_handle_fault
+ * 1-2. Use a function to allocate pages
+ * 2. Allocate and initialize vm-entry
+ * 3. Call install_page() to set up the page table
+ * 4. Return True on success, False on failure
+ */
+static void
 vm_stack_growth (void *addr UNUSED) {
-	/* 스택을 증가시키는 함수
-	 * 주소 (addr)가 지정하는 위치에서 스택이 증가하도록 처리
-	 * 현재 스택의 사이즈는 고정적으로 4KB -> 최대 1MB까지 확장되도록 구현
-	 * 1. 주소가 스택 영역에 속하는 경우 스택을 증가시키고 필요한 페이지를 할당하는 로직 구현
-	 * 1-1. 주소가 스택 영역에 속하는 지 체크하는 함수 구현 ->vm_try_handle_faul에서 이미 구현
-	 * 1-2. 페이지를 할당하는 함수 사용
-	 * 2. vm-enty를 할당하고, 초기화
-	 * 3. install_page()호출하여 페이지 테이블 설정
-	 * 4. 성공 시 True, 실패 시 False를 리턴
-	 */
 	struct thread *curr = thread_current();
 	void *round_down_addr = pt_round_down(addr);
 
-    /* 스택의 최대 크기를 넘지 않는지 확인 */
+    /* Check if it does not exceed the maximum size of the stack */
     if ((uint64_t)(USER_STACK + MAX_STACK_SIZE) <= (uint64_t)round_down_addr) {
         return false;
     }
 
-    /* 페이지가 이미 존재하는지 확인 */ 
-    if (spt_find_page(&curr->spt, round_down_addr) != NULL) {
+    /* Check if the page already exists */
+    if (spt_find_page (&curr->spt, round_down_addr) != NULL) {
         return false;
     }
 
-    /* 새 페이지 할당 */ 
-    struct page *new_page = malloc(sizeof(struct page));
+    /* Allocate a new page */
+    struct page *new_page = malloc (sizeof (struct page));
     if (new_page == NULL) {
         return false;
     }
 
-	/* 페이지 테이블에 매핑 */ 
-    if (!install_page(round_down_addr, new_page, true)) {
+	/* Map to the page table */
+    if (!install_page (round_down_addr, new_page, true)) {
         free(new_page);
         return false;
     }
 
-	/* 보충 페이지 테이블에 페이지 추가 */ 
-    if (!spt_insert_page(&curr->spt, new_page)) {
+	/* Add the page to the supplementary page table */
+    if (!spt_insert_page (&curr->spt, new_page)) {
         free(new_page);
         return false;
     }
-
 	return true;
-
 }
 
 /* Handle the fault on write_protected page */
@@ -179,7 +176,14 @@ static bool
 vm_handle_wp (struct page *page UNUSED) {
 }
 
-/* Return true on success */
+/* Return true on success 
+ * Function to handle page faults
+ * Implement the logic to handle the fault for a given address (addr) when a page fault occurs
+ * Add logic to detect and handle stack access
+ * 1. Detect stack access to determine whether it's for stack expansion or an invalid memory access
+ * 1-1. Consider access to an address lower than the stack pointer but within a certain range (32 bytes) as stack expansion
+ * 1-2. If it's an invalid memory access, terminate the process and display an error message
+ */
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
@@ -187,37 +191,28 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-
-	/* 페이지 결함을 처리하는 함수
-	 * 주어진 주소 (addr)에 대해 페이지 결함이 발생했을 때
-	 * 해당 결함을 처리하는 로직을 구현
-	 * 
-	 * 스택 접근을 감지하고 처리하는 로직을 추가한다
-	 * 1. 스택 접근을 감지해서 스택 확장을 위한 것인지, 아니면 무효한 메모리 접근인지 판별
-	 * 1-1. 스택 포인터보다 낮은 주소지만 일정범위 내(32바이트)에 있는 접근을 스택 확장으로 간주
-	 * 1-2. 무효한 메모리 접근일 때는 프로세스를 종료하고 오류메시지 출력
-	 */
-    /* 스택 포인터 확인 */
+    /* Check stack pointer */
     void *stack_pointer = f->rsp;
 
-    /* 페이지 찾기 */
-    page = spt_find_page(spt, addr);
+    /* Find page */
+    page = spt_find_page (spt, addr);
 
-    /* 스택 확장 로직 */
+    /* Stack expansion logic */
     if (addr >= stack_pointer - 32 && addr < stack_pointer) {
         if (page == NULL) {
-            return vm_stack_growth (addr);
+            vm_stack_growth (addr);
+			return true;
         }
     }
 
-    /* 무효한 메모리 접근 처리 */
+    /* Handle invalid memory access */
     if (page == NULL) {
-        exit(-1);
+        exit (-1);
         return false;
     }
 
-    /* 정상적인 페이지 결함 처리 */
-    return vm_do_claim_page(page);
+    /* Normal page fault handling */
+    return vm_do_claim_page (page);
 }
 
 /* Free the page.
