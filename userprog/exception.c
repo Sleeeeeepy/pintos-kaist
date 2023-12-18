@@ -143,6 +143,12 @@ page_fault (struct intr_frame *f) {
 
 #ifdef VM
 	/* For project 3 and later. */
+	/*
+	 * 스택 접근을 감지하고 처리하는 로직을 추가한다
+	 * 1. 스택 접근을 감지해서 스택 확장을 위한 것인지, 아니면 무효한 메모리 접근인지 판별
+	 * 1-1. 스택 포인터보다 낮은 주소지만 일정범위 내(32바이트)에 있는 접근을 스택 확장으로 간주
+	 * 1-2. 무효한 메모리 접근일 때는 프로세스를 종료하고 오류메시지 출력
+	 */
 	if (vm_try_handle_fault (f, fault_addr, user, write, not_present))
 		return;
 #endif
