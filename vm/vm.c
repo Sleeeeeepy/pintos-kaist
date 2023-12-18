@@ -121,6 +121,12 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	/* 스택을 증가시키는 함수
+	 * 주소 (addr)가 지정하는 위치에서
+	 * 스택이 증가하도록 처리
+	 * 1. 주소가 스택 영역에 속하는 경우
+	 * 스택을 증가시키고 필요한 페이지를 할당하는 로직 구현
+	 */
 }
 
 /* Handle the fault on write_protected page */
@@ -137,6 +143,13 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
+	/* 페이지 결함을 처리하는 함수
+	 * 주어진 주소 (addr)에 대해 페이지 결함이 발생했을 때
+	 * 해당 결함을 처리하는 로직을 구현
+	 * 1. 주소가 유효한 지 확인 후
+	 * 2. 필요한 경우 페이지를 할당
+	 * 3. 아닌 경우 기존 페이지를 수정
+	 */
 	return vm_do_claim_page (page);
 }
 
