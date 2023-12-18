@@ -128,12 +128,25 @@ vm_stack_growth (void *addr UNUSED) {
 	 * 주소 (addr)가 지정하는 위치에서 스택이 증가하도록 처리
 	 * 현재 스택의 사이즈는 고정적으로 4KB -> 최대 8MB까지 확장되도록 구현
 	 * 1. 주소가 스택 영역에 속하는 경우 스택을 증가시키고 필요한 페이지를 할당하는 로직 구현
-	 * 1-1. 주소가 스택 영역에 속하는 지 체크하는 함수 구현
+	 * 1-1. 주소가 스택 영역에 속하는 지 체크하는 함수 구현 ->vm_try_handle_faul에서 이미 구현
 	 * 1-2. 페이지를 할당하는 함수 사용
 	 * 2. vm-enty를 할당하고, 초기화
 	 * 3. install_page()호출하여 페이지 테이블 설정
 	 * 4. 성공 시 True, 실패 시 False를 리턴
 	 */
+	struct thread *curr = thread_current();
+	void *round_down_addr = pt_round_down(addr);
+	if (stack_size >MAX_STACK_SIZE) {
+		return false;
+	}
+	if(spt_find_page(&curr->spt, round_down_addr) != NULL) {
+		return false;
+	}
+	struct page *new_page = malloc(sizeof(struct page));
+	if (new_page == NULL) {
+		return false;
+	}
+
 }
 
 /* Handle the fault on write_protected page */
