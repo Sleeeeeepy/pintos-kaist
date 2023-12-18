@@ -160,8 +160,12 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	 * 1-2. 무효한 메모리 접근일 때는 프로세스를 종료하고 오류메시지 출력
 	 */
 	void *stack_pointer = f->rsp;
-
-	
+	if (stack_pointer -32 <= addr <= stack_pointer ) {
+		return stack_growth(addr);
+	}
+	else {
+		exit(-1);
+	}
 
 	return vm_do_claim_page (page);
 }
