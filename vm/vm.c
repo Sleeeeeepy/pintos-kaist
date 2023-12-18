@@ -9,7 +9,7 @@
 #include "vaddr.h"
 #include "threads/palloc.h"
 
-const MAX_STACK_SIZE 0x1 << 20
+const MAX_STACK_SIZE = 1 << 20;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
