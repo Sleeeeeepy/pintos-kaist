@@ -6,6 +6,9 @@
 
 #include "thread.h"
 #include "interrupt.h"
+#include "vaddr.h"
+
+#define MAX_STACK_SIZE 0x1 << 23
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -136,7 +139,7 @@ vm_stack_growth (void *addr UNUSED) {
 	 */
 	struct thread *curr = thread_current();
 	void *round_down_addr = pt_round_down(addr);
-	if (stack_size >MAX_STACK_SIZE) {
+	if ( addr > (USER_STACK + MAX_STACK_SIZE)) {
 		return false;
 	}
 	if(spt_find_page(&curr->spt, round_down_addr) != NULL) {
