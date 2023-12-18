@@ -10,7 +10,7 @@
 #include "threads/palloc.h"
 
 
-#define MAX_STACK_SIZE 0x1 << 23
+#define MAX_STACK_SIZE 0x1 << 20
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -131,7 +131,7 @@ static bool
 vm_stack_growth (void *addr UNUSED) {
 	/* 스택을 증가시키는 함수
 	 * 주소 (addr)가 지정하는 위치에서 스택이 증가하도록 처리
-	 * 현재 스택의 사이즈는 고정적으로 4KB -> 최대 8MB까지 확장되도록 구현
+	 * 현재 스택의 사이즈는 고정적으로 4KB -> 최대 1MB까지 확장되도록 구현
 	 * 1. 주소가 스택 영역에 속하는 경우 스택을 증가시키고 필요한 페이지를 할당하는 로직 구현
 	 * 1-1. 주소가 스택 영역에 속하는 지 체크하는 함수 구현 ->vm_try_handle_faul에서 이미 구현
 	 * 1-2. 페이지를 할당하는 함수 사용
