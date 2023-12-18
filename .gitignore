@@ -3,3 +3,5 @@ threads/build/**/*
 vm/build/**/*
 filesys/build/**/*
 .vscode/**/*
+vscode-argument-builder
+vscode-filename-configurator
