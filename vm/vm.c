@@ -139,7 +139,7 @@ vm_stack_growth (void *addr UNUSED) {
 	 */
 	struct thread *curr = thread_current();
 	void *round_down_addr = pt_round_down(addr);
-	if ( addr > (USER_STACK + MAX_STACK_SIZE)) {
+	if ( (addr + PGSIZE) > (USER_STACK + MAX_STACK_SIZE)) {
 		return false;
 	}
 	if(spt_find_page(&curr->spt, round_down_addr) != NULL) {
