@@ -7,6 +7,8 @@
 #include "thread.h"
 #include "interrupt.h"
 #include "vaddr.h"
+#include "threads/palloc.h"
+
 
 #define MAX_STACK_SIZE 0x1 << 23
 
@@ -125,7 +127,7 @@ vm_get_frame (void) {
 }
 
 /* Growing the stack. */
-static void
+static bool
 vm_stack_growth (void *addr UNUSED) {
 	/* 스택을 증가시키는 함수
 	 * 주소 (addr)가 지정하는 위치에서 스택이 증가하도록 처리
@@ -139,16 +141,36 @@ vm_stack_growth (void *addr UNUSED) {
 	 */
 	struct thread *curr = thread_current();
 	void *round_down_addr = pt_round_down(addr);
-	if ( (addr + PGSIZE) > (USER_STACK + MAX_STACK_SIZE)) {
-		return false;
-	}
-	if(spt_find_page(&curr->spt, round_down_addr) != NULL) {
-		return false;
-	}
-	struct page *new_page = malloc(sizeof(struct page));
-	if (new_page == NULL) {
-		return false;
-	}
+
+    /* 스택의 최대 크기를 넘지 않는지 확인 */
+    if ((uint64_t)(USER_STACK + MAX_STACK_SIZE) <= (uint64_t)round_down_addr) {
+        return false;
+    }
+
+    /* 페이지가 이미 존재하는지 확인 */ 
+    if (spt_find_page(&curr->spt, round_down_addr) != NULL) {
+        return false;
+    }
+
+    /* 새 페이지 할당 */ 
+    struct page *new_page = malloc(sizeof(struct page));
+    if (new_page == NULL) {
+        return false;
+    }
+
+	/* 페이지 테이블에 매핑 */ 
+    if (!install_page(round_down_addr, new_page, true)) {
+        free(new_page);
+        return false;
+    }
+
+	/* 보충 페이지 테이블에 페이지 추가 */ 
+    if (!spt_insert_page(&curr->spt, new_page)) {
+        free(new_page);
+        return false;
+    }
+
+	return true;
 
 }
 
@@ -175,15 +197,27 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	 * 1-1. 스택 포인터보다 낮은 주소지만 일정범위 내(32바이트)에 있는 접근을 스택 확장으로 간주
 	 * 1-2. 무효한 메모리 접근일 때는 프로세스를 종료하고 오류메시지 출력
 	 */
-	void *stack_pointer = f->rsp;
-	if (stack_pointer -32 <= addr <= stack_pointer ) {
-		return stack_growth(addr);
-	}
-	else {
-		exit(-1);
-	}
+    /* 스택 포인터 확인 */
+    void *stack_pointer = f->rsp;
 
-	return vm_do_claim_page (page);
+    /* 페이지 찾기 */
+    page = spt_find_page(spt, addr);
+
+    /* 스택 확장 로직 */
+    if (addr >= stack_pointer - 32 && addr < stack_pointer) {
+        if (page == NULL) {
+            return vm_stack_growth (addr);
+        }
+    }
+
+    /* 무효한 메모리 접근 처리 */
+    if (page == NULL) {
+        exit(-1);
+        return false;
+    }
+
+    /* 정상적인 페이지 결함 처리 */
+    return vm_do_claim_page(page);
 }
 
 /* Free the page.
