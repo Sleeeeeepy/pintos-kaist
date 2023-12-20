@@ -1,9 +1,16 @@
 /* vm.c: Generic interface for virtual memory objects. */
-
-#include "threads/malloc.h"
 #include "vm/vm.h"
+#include <debug.h>
+#include <hash.h>
+#include "threads/malloc.h"
+#include "threads/mmu.h"
 #include "vm/inspect.h"
+#include "filesys/page_cache.h"
 
+static struct page *page_lookup (const struct supplemental_page_table *spt, void *addr);
+static bool page_less (const struct hash_elem *a_,
+					const struct hash_elem *b_, void *aux UNUSED);
+static unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -63,9 +70,11 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
+	struct page *page;
 	/* TODO: Fill this function. */
-
+	if ((page = page_lookup (spt, va)) == NULL) {
+		return NULL;
+	}
 	return page;
 }
 
@@ -73,10 +82,7 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
-	int succ = false;
-	/* TODO: Fill this function. */
-
-	return succ;
+	return hash_insert (&spt->page_map, &page->elem) == NULL;
 }
 
 void
@@ -110,8 +116,27 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
+	struct frame *frame = malloc (sizeof (frame));
+	if (frame == NULL) {
+		PANIC ("todo");
+		/* we need sizeof (struct frame) / 4096 * MEM_SIZE bytes of
+		 * pre-allocated block in kernel pool. for example, if total memory of
+		 * the system is 4 MB, and the size of metadata is 16 byte
+		 * then we need 16384 bytes to map all frames.
+		 */
+
+		/* or return NULL. */
+		return NULL;
+	}
+
+	void *kva = palloc_get_page (PAL_USER | PAL_ZERO);
+	frame->kva = kva;
+	frame->page = NULL;
+
+	if (frame->kva == NULL) {
+		PANIC ("todo");
+		/* TODO: evict here. */
+	}
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -151,8 +176,11 @@ vm_dealloc_page (struct page *page) {
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
+	struct page *page = spt_find_page (&thread_current ()->spt, va);
 	/* TODO: Fill this function */
+	if (page == NULL) {
+		return false;
+	}
 
 	return vm_do_claim_page (page);
 }
@@ -161,19 +189,27 @@ vm_claim_page (void *va UNUSED) {
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
+	if (frame == NULL) {
+		return false;
+	}
 
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	if (pml4_get_page (thread_current ()->pml4, page->va) != NULL) {
+		return false;
+	}
 
+	pml4_set_page (thread_current ()->pml4, page->va, frame->kva, page->writable);
 	return swap_in (page, frame->kva);
 }
 
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init (&spt->page_map, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -187,4 +223,31 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+/* Returns the page containing the given virtual address, or a null pointer if no such page exists. */
+static struct page *
+page_lookup (const struct supplemental_page_table *spt, void *addr) {
+	struct page p;
+	struct hash_elem *e;
+	p.va = pg_round_down (addr);
+	e = hash_find (&spt->page_map, &p.elem);
+	return e != NULL ? hash_entry (e, struct page, elem) : NULL;
+}
+
+/* Returns true if page a precedes page b. */
+static bool
+page_less (const struct hash_elem *a_,
+		   const struct hash_elem *b_, void *aux UNUSED) {
+	const struct page *a = hash_entry (a_, struct page, elem);
+	const struct page *b = hash_entry (b_, struct page, elem);
+
+	return a->va < b->va;
+}
+
+/* Returns a hash value for page p. */
+static unsigned
+page_hash (const struct hash_elem *p_, void *aux UNUSED) {
+	const struct page *p = hash_entry (p_, struct page, elem);
+	return hash_bytes (&p->va, sizeof p->va);
 }

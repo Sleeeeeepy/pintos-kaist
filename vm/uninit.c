@@ -33,6 +33,12 @@ uninit_new (struct page *page, void *va, vm_initializer *init,
 		.operations = &uninit_ops,
 		.va = va,
 		.frame = NULL, /* no frame for now */
+		.elem = (struct hash_elem) {
+			.list_elem = (struct list_elem) {
+				.prev = NULL,
+				.next = NULL
+			}
+		},
 		.uninit = (struct uninit_page) {
 			.init = init,
 			.type = type,
@@ -65,4 +71,5 @@ uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
+	return;
 }
