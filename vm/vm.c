@@ -11,6 +11,7 @@ static struct page *page_lookup (const struct supplemental_page_table *spt, void
 static bool page_less (const struct hash_elem *a_,
 					const struct hash_elem *b_, void *aux UNUSED);
 static unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+static void page_map_destruct (struct hash_elem *e, void *aux);
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -60,8 +61,39 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
+		struct page *page = malloc (sizeof (struct page));
+		void *initializer = NULL;
+
+		if (page == NULL) {
+			goto err;
+		}
+
+		switch (VM_TYPE (type)) {
+			case VM_UNINIT:
+			default:
+				NOT_REACHED ();
+				// free (page);
+				// goto err;
+			case VM_ANON:
+				initializer = anon_initializer;
+				break;
+			case VM_FILE:
+				initializer = file_backed_initializer;
+				break;
+			case VM_PAGE_CACHE:
+				initializer = page_cache_initializer;
+				break;
+		}	
+		uninit_new (page, upage, init, type, aux, initializer);
+		page->writable = writable;
 
 		/* TODO: Insert the page into the spt. */
+		if (!spt_insert_page (spt, page)) {
+			free (page);
+			goto err;
+		}
+
+		return true;
 	}
 err:
 	return false;
@@ -137,7 +169,7 @@ vm_get_frame (void) {
 		PANIC ("todo");
 		/* TODO: evict here. */
 	}
-
+	
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 	return frame;
@@ -161,6 +193,23 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	if (addr == NULL) {
+		return false;
+	}
+
+	/* If fault address is kernel page, then it's a kernel bug. */
+	if (is_kernel_vaddr (addr)) {
+		return false;
+	}
+
+	// It's present, but page fault occured. it's also a bug.
+	if (!not_present) {
+		return false;
+	}
+
+	if ((page = spt_find_page (spt, addr)) == NULL) {
+		return false;
+	}
 
 	return vm_do_claim_page (page);
 }
@@ -221,8 +270,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	/* TODO: Destroy all the supplemental_page_table hold by thread */
+	hash_clear (&thread_current ()->spt, page_map_destruct);
+	/* TODO: writeback all the modified contents to the storage. */
 }
 
 /* Returns the page containing the given virtual address, or a null pointer if no such page exists. */
@@ -250,4 +300,14 @@ static unsigned
 page_hash (const struct hash_elem *p_, void *aux UNUSED) {
 	const struct page *p = hash_entry (p_, struct page, elem);
 	return hash_bytes (&p->va, sizeof p->va);
+}
+
+static void
+page_map_destruct (struct hash_elem *e, void *aux) {
+	const struct page *page = hash_entry (e, struct page, elem);
+	if (page == NULL) {
+		return;
+	}
+
+	vm_dealloc_page (page);
 }
