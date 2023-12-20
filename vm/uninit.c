@@ -42,7 +42,13 @@ uninit_new (struct page *page, void *va, vm_initializer *init,
 	};
 }
 
-/* Initalize the page on first fault */
+/* Initialize the page on first fault
+ * 1. Initialize the page.
+ * 1-1. Call the page_initialize function.
+ * 1-2. If the call to page_initialize fails, return false immediately.
+ * 2. If init exists, call the function to perform additional initialization.
+ * 3. Return true if successful, otherwise return false.
+ */
 static bool
 uninit_initialize (struct page *page, void *kva) {
 	struct uninit_page *uninit = &page->uninit;

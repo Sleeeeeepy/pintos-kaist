@@ -46,7 +46,14 @@ static struct frame *vm_evict_frame (void);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. */
+ * `vm_alloc_page`.
+ * 1. Check if the passed type is valid, i.e., not VM_UNINIT, then obtain the current thread's spt, and check the page at the given virtual address. This part is already implemented.
+ * 2. Create a new page and call the initializer function based on vm_type.
+ * 2-1. Use the uninit_new function to create an uninit page structure.
+ * 2-2. Modify the necessary fields.
+ * 3. Insert the created page into the supplemental page table.
+ * 4. Return true if all processes are successful, otherwise go to err and return false.
+ */
 bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {

@@ -17,14 +17,24 @@ static const struct page_operations anon_ops = {
 	.type = VM_ANON,
 };
 
-/* Initialize the data for anonymous pages */
+/* Initialize the data for anonymous pages
+ * 1. Define and call a new auxiliary function to set up the swap_disk.
+ * 2. Initialize the data structures for managing the swap area.
+ * 3. Set up the page allocation algorithm.
+ * 4. Set policies related to anonymous pages.
+ */
 void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
 	swap_disk = NULL;
 }
 
-/* Initialize the file mapping */
+/* Initialize the file mapping
+ * 1. Check if the passed arguments (page, type, kva) are valid.
+ * 2. Initialize the anonymous page structure.
+ * 2-1. Initialize the anon_page within the page structure.
+ * 3. Allocate the data for the anonymous page in actual memory or set its initial state.
+ */
 bool
 anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
