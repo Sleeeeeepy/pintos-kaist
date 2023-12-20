@@ -126,9 +126,16 @@ vm_evict_frame (void) {
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
- * and return it. This always return valid address. That is, if the user pool
+ * and return it. This always returns a valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
- * space.*/
+ * space.
+ * 1. Check if the frame pool is initialized.
+ * 2. Find an available and unallocated frame.
+ * 3. If an available frame is found, initialize that frame.
+ * 3-1. If no available frame is found, use the page replacement algorithm.
+ * 3-2. For now, there's no need to handle swap out, so mark it as PANIC("todo").
+ * 4. Return that frame.
+ */
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
@@ -237,7 +244,11 @@ vm_dealloc_page (struct page *page) {
 	free (page);
 }
 
-/* Claim the page that allocate on VA. */
+/* Claim the page that is allocated on VA.
+ * 1. Validate the virtual address. Return false if it does not exist.
+ * 2. Find the page corresponding to the given virtual address.
+ * 2-1. Use hash_find, find_bucket, and find_elem functions.
+ */
 bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
@@ -246,7 +257,14 @@ vm_claim_page (void *va UNUSED) {
 	return vm_do_claim_page (page);
 }
 
-/* Claim the PAGE and set up the mmu. */
+/* Claim the PAGE and set up the mmu.
+ * 1. Check if the passed page pointer is valid.
+ * 2. Call the frame allocation function vm_get_frame() to allocate a frame.
+ * 2-1. Implement logic to swap pages if no available frame is found.
+ * 3. Link the page and frame. The materials for set links are already implemented.
+ * 4. Update the page table.
+ * 4-1. Insert the page-frame pair into the page table entry.
+ */
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
