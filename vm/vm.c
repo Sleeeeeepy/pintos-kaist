@@ -299,13 +299,23 @@ void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 }
 
-/* Copy supplemental page table from src to dst */
+/* Copy supplemental page table from src to dst 
+ * This function is used in the fork function when a child needs to inherit the execution context of the parent.
+ * 1. Iterate through each page of the supplemental page table of src.
+ * 1-1. Copy the same entries into the supplemental page table of dst.
+ * 2. Allocate uninit page and claim them.
+ */
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
 }
 
-/* Free the resource hold by the supplemental page table */
+/* Free the resource held by the supplemental page table
+ * This function is called when a process terminates.
+ * There is no need to worry about the actual page table and physical memory.
+ * 1. Iterate through page entries and kill the pages in the table.
+ * 1-1. Call the destroy function.
+ */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
