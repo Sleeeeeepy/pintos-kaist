@@ -652,7 +652,13 @@ static bool install_page (void *upage, void *kpage, bool writable);
  * user process if WRITABLE is true, read-only otherwise.
  *
  * Return true if successful, false if a memory allocation error
- * or disk read error occurs. */
+ * or disk read error occurs. 
+ * 1. Define an auxiliary data structure.
+ * 1-1. It includes information about the file, offset, number of bytes to read, and number of bytes to fill with zeros.
+ * 2. Create and initialize the auxiliary data.
+ * 3. Within a loop, call vm_alloc_page_with_initializer to allocate and initialize the page.
+ * 4. Define a page initializer function. This function uses the 'aux' structure to fill the page with data.
+ */
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
@@ -735,6 +741,14 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
+/*
+ * 1. Check if the arguments passed to the function are valid.
+ * 2. Extract the file, offset, number of bytes to read, and number of bytes to fill with zeros from the 'aux' structure.
+ * 3. Read the required segment from the file and load it into the allocated memory.
+ * 3-1. Perform this using the file system interface file_read.
+ * 4. Fill the remaining part of the segment with zeros.
+ * 5. Return true if successful, and false if unsuccessful.
+*/
 static bool
 lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
