@@ -67,7 +67,14 @@ err:
 	return false;
 }
 
-/* Find VA from spt and return page. On error, return NULL. */
+/* Find VA from spt and return page. On error, return NULL.
+ * 1. Verify the validity of the provided spt and va.
+ * 1-1. If invalid, return NULL.
+ * 2. Convert the virtual address (va) into a page number.
+ * 3. Use hash table lookup to find the struct page entry.
+ * 3-1. Utilize find_bucket or find_elem functions.
+ * 4. Return the found page entry, or return NULL if not found.
+ */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
@@ -76,7 +83,14 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	return page;
 }
 
-/* Insert PAGE into spt with validation. */
+/* Insert PAGE into spt with validation.
+ * 1. Check if the received spt and page are valid.
+ * 1-1. If invalid, perform error handling.
+ * 2. Check if there is already a page entry in the spt with the same virtual address (va) as the page.
+ * 3. Insert the page into the spt.
+ * 3-1. Use the insert_elem function.
+ * 4. Return true if the insertion is successfully completed, otherwise return fault.
+ */
 bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
@@ -246,7 +260,16 @@ vm_do_claim_page (struct page *page) {
 	return swap_in (page, frame->kva);
 }
 
-/* Initialize new supplemental page table */
+/* Initialize new supplemental page table
+ * Choose a data structure, using the already implemented Hash Table.
+ * This function is called when a new process starts and when a process forks.
+ * 1. Allocate memory for the structure representing the supplemental page table and initialize the necessary fields.
+ * 2. Write error handling code in case of memory allocation failure.
+ * 3. Initialize the hash table.
+ * 3-1. Create the hash table using hash init.
+ * 3-2. Initialize the keys and values of the hash table using hash clear.
+ * 4. Since the function type is void, it returns nothing.
+ */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 }
