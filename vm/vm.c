@@ -154,49 +154,16 @@ vm_get_frame (void) {
 }
 
 /* Growing the stack.
- * Function to increase the stack
- * Process to increase the stack from the position specified by the address (addr)
- * Current stack size is fixed at 4KB -> Implement to expand up to a maximum of 1MB
- * 1. If the address is within the stack area, implement logic to increase the stack and allocate necessary pages
- * 1-1. Implement a function to check if the address belongs to the stack area -> already implemented in vm_try_handle_fault
- * 1-2. Use a function to allocate pages
- * 2. Allocate and initialize vm-entry
- * 3. Call install_page() to set up the page table
- * 4. Return True on success, False on failure
+ * 1. Check if the passed addr argument is valid.
+ * 2. Round down the addr to the nearest multiple of the page size (PGSIZE) to align it with a page boundary.
+ * 2-1. Use the pg_round_down function.
+ * 3. Check if the stack does not exceed the maximum size (1MB).
+ * 3-1. Calculate the distance between the current stack pointer position and aligned_addr.
+ * 4. Allocate and initialize a new page.
+ * 5. Initialize the stack and exit the function with return.
  */
 static void
 vm_stack_growth (void *addr UNUSED) {
-	struct thread *curr = thread_current();
-	void *round_down_addr = pt_round_down(addr);
-
-    /* Check if it does not exceed the maximum size of the stack */
-    if ((uint64_t)(USER_STACK + MAX_STACK_SIZE) <= (uint64_t)round_down_addr) {
-        return false;
-    }
-
-    /* Check if the page already exists */
-    if (spt_find_page (&curr->spt, round_down_addr) != NULL) {
-        return false;
-    }
-
-    /* Allocate a new page */
-    struct page *new_page = malloc (sizeof (struct page));
-    if (new_page == NULL) {
-        return false;
-    }
-
-	/* Map to the page table */
-    if (!install_page (round_down_addr, new_page, true)) {
-        free(new_page);
-        return false;
-    }
-
-	/* Add the page to the supplementary page table */
-    if (!spt_insert_page (&curr->spt, new_page)) {
-        free(new_page);
-        return false;
-    }
-	return true;
 }
 
 /* Handle the fault on write_protected page */
@@ -204,13 +171,13 @@ static bool
 vm_handle_wp (struct page *page UNUSED) {
 }
 
-/* Return true on success 
- * Function to handle page faults
- * Implement the logic to handle the fault for a given address (addr) when a page fault occurs
- * Add logic to detect and handle stack access
- * 1. Detect stack access to determine whether it's for stack expansion or an invalid memory access
- * 1-1. Consider access to an address lower than the stack pointer but within a certain range (32 bytes) as stack expansion
- * 1-2. If it's an invalid memory access, terminate the process and display an error message
+/* Return true on success
+ * 1. Validate that the page fault is within a valid address range.
+ * 1-1. Check the state at the time the fault occurred.
+ * 2. If the address is near the current stack and the fault is for a write operation, grow the stack.
+ * 2-1. Call the vm_stack_growth function.
+ * 3. Handle other valid page fault cases that are not stack growth.
+ * 4. Call vm_do_claim_page for the found page.
  */
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
@@ -219,27 +186,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-    /* Check stack pointer */
-    void *stack_pointer = f->rsp;
 
-    /* Find page */
-    page = spt_find_page (spt, addr);
-
-    /* Stack expansion logic */
-    if (addr >= stack_pointer - 32 && addr < stack_pointer) {
-        if (page == NULL) {
-            vm_stack_growth (addr);
-			return true;
-        }
-    }
-
-    /* Handle invalid memory access */
-    if (page == NULL) {
-        exit (-1);
-        return false;
-    }
-
-    /* Normal page fault handling */
     return vm_do_claim_page (page);
 }
 
