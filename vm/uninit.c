@@ -62,10 +62,14 @@ uninit_initialize (struct page *page, void *kva) {
 		(init ? init (page, aux) : true);
 }
 
-/* Free the resources hold by uninit_page. Although most of pages are transmuted
+/* Free the resources held by uninit_page. Although most of the pages are transmuted
  * to other page objects, it is possible to have uninit pages when the process
- * exit, which are never referenced during the execution.
- * PAGE will be freed by the caller. */
+ * exits, which were never referenced during the execution.
+ * PAGE will be freed by the caller.
+ * 1. Check if the arguments passed to the function are valid.
+ * 2. Only handle anonymous pages. Cleanup for file-based pages will be implemented later.
+ * 2-1. Call the anon_destroy function for the anonymous page.
+ */
 static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;

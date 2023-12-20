@@ -314,7 +314,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
  * This function is called when a process terminates.
  * There is no need to worry about the actual page table and physical memory.
  * 1. Iterate through page entries and kill the pages in the table.
- * 1-1. Call the destroy function.
+ * 1-1. Call the uninit_destroy of anon_destroy function.
  */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {

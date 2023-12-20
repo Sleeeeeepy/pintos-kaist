@@ -55,7 +55,13 @@ anon_swap_out (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
 }
 
-/* Destroy the anonymous page. PAGE will be freed by the caller. */
+/* Destroy the anonymous page. PAGE will be freed by the caller.
+ * 1. Check if the passed page argument is valid.
+ * 2. Extract the anon_page structure from the page structure. (already implemented)
+ * 3. If there are resources allocated to anon_page, release them.
+ * 3-1. Such as memory allocated to the anonymous page, file handles, etc.
+ * 4. Perform any additional cleanup tasks and then exit the function with return;
+ */
 static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
