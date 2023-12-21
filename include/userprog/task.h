@@ -48,7 +48,7 @@ struct task {
 	struct semaphore wait_lock; /* Lock for wait system call. */
 	struct list children;       /* List of child processes. */
 	struct intr_frame *if_;     /* Temporary interrupt frame. */
-	struct file* executable;    /* Executable file. */
+	struct file *executable;    /* Executable file. */
 	enum process_status status; /* Status of the process. */
 	int exit_code;              /* Exit code. */
 	void *args;                 /* Temporary argument for deterministic
