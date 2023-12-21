@@ -311,7 +311,7 @@ process_exit (void) {
 	printf ("%s: exit(%d)\n", task->name, task->exit_code);
 	task_set_status (task, PROCESS_EXITED);
 	sema_up (&task->wait_lock);
-	task_cleanup (task);
+	task_file_cleanup (task);
 
 	/* If the current process has children, remove children. 
 	 * If there is child processes that aren't complete its task,

@@ -134,7 +134,7 @@ task_free (struct task *t) {
 }
 
 void 
-task_cleanup (struct task *t) {
+task_file_cleanup (struct task *t) {
 	/* Close opened files. */
 	for (size_t i = 0; i < MAX_FD; i++) {
 		if (!t->fds[i].closed && !t->fds[i].duplicated) {
