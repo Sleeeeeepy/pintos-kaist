@@ -145,7 +145,8 @@ task_file_cleanup (struct task *t) {
 	}
 
 	/* Close the executable file. */
-	file_close (t->executable);    
+	file_close (t->executable);
+	t->executable = NULL;
 }
 
 void 

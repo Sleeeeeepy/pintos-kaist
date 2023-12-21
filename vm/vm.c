@@ -2,16 +2,24 @@
 #include "vm/vm.h"
 #include <debug.h>
 #include <hash.h>
+#include <string.h>
 #include "threads/malloc.h"
 #include "threads/mmu.h"
+#include "userprog/process.h"
 #include "vm/inspect.h"
 #include "filesys/page_cache.h"
 
-static struct page *page_lookup (const struct supplemental_page_table *spt, void *addr);
+static struct page *page_lookup (struct supplemental_page_table *spt, void *addr);
 static bool page_less (const struct hash_elem *a_,
 					const struct hash_elem *b_, void *aux UNUSED);
-static unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+static uint64_t page_hash (const struct hash_elem *p_, void *aux UNUSED);
 static void page_map_destruct (struct hash_elem *e, void *aux);
+static bool page_copy_anon (struct supplemental_page_table *dst, 
+				struct supplemental_page_table *src, struct page* page);
+static bool page_copy_file (struct supplemental_page_table *dst, 
+				struct supplemental_page_table *src, struct page* page);
+static bool page_copy_uninit (struct supplemental_page_table *dst, 
+				struct supplemental_page_table *src, struct page* page);
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -90,6 +98,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: Insert the page into the spt. */
 		if (!spt_insert_page (spt, page)) {
 			free (page);
+			free (aux);
 			goto err;
 		}
 
@@ -120,7 +129,6 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	vm_dealloc_page (page);
-	return true;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -169,7 +177,7 @@ vm_get_frame (void) {
 		PANIC ("todo");
 		/* TODO: evict here. */
 	}
-	
+
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 	return frame;
@@ -265,19 +273,57 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
+	struct hash_iterator iter;
+	hash_clear (&dst->page_map, page_map_destruct);
+	hash_first (&iter, &src->page_map);
+	bool success = false;
+	while (hash_next (&iter)) {
+		struct page *page = hash_entry (hash_cur (&iter), struct page, elem);
+		enum vm_type type = VM_TYPE (page->operations->type);
+		switch (type) {
+			case VM_ANON:
+				success = page_copy_anon (dst, src, page);
+				break;
+			case VM_FILE:
+				success = page_copy_file (dst, src, page);
+				break;
+			case VM_UNINIT:
+				success = page_copy_uninit (dst, src, page);
+				break;
+			default:
+				PANIC ("Unkown page type: %d", type);
+		}
+
+		if (!success) {
+			// TODO: clean up dst table
+			goto fail;
+		}
+
+		if (type != VM_UNINIT) {
+			struct page *cpage = spt_find_page (dst, page->va);
+			if (cpage == NULL) {
+				success = false;
+				goto fail;
+			}
+			memcpy (cpage->frame->kva, page->frame->kva, PGSIZE);
+		}
+	}
+
+fail:
+	return success;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread */
-	hash_clear (&thread_current ()->spt, page_map_destruct);
+	hash_clear (&thread_current ()->spt.page_map, page_map_destruct);
 	/* TODO: writeback all the modified contents to the storage. */
 }
 
 /* Returns the page containing the given virtual address, or a null pointer if no such page exists. */
 static struct page *
-page_lookup (const struct supplemental_page_table *spt, void *addr) {
+page_lookup (struct supplemental_page_table *spt, void *addr) {
 	struct page p;
 	struct hash_elem *e;
 	p.va = pg_round_down (addr);
@@ -296,7 +342,7 @@ page_less (const struct hash_elem *a_,
 }
 
 /* Returns a hash value for page p. */
-static unsigned
+static uint64_t
 page_hash (const struct hash_elem *p_, void *aux UNUSED) {
 	const struct page *p = hash_entry (p_, struct page, elem);
 	return hash_bytes (&p->va, sizeof p->va);
@@ -304,10 +350,58 @@ page_hash (const struct hash_elem *p_, void *aux UNUSED) {
 
 static void
 page_map_destruct (struct hash_elem *e, void *aux) {
-	const struct page *page = hash_entry (e, struct page, elem);
+	struct page *page = hash_entry (e, struct page, elem);
 	if (page == NULL) {
 		return;
 	}
 
 	vm_dealloc_page (page);
 }
+
+static bool
+page_copy_anon (struct supplemental_page_table *dst, 
+				struct supplemental_page_table *src, struct page* page) {
+	void *va = page->va;
+	struct intr_frame *if_ = &thread_current ()->tf;
+	if (!vm_alloc_page (page->operations->type, va, page->writable)) {
+		return false;
+	}
+
+	if (!vm_claim_page (va)) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool
+page_copy_file (struct supplemental_page_table *dst, 
+				struct supplemental_page_table *src, struct page* page) {
+	void *va = page->va;
+	if (!vm_alloc_page (page->operations->type, va, page->writable)) {
+		return false;
+	}
+
+	if (!vm_claim_page (va)) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool
+page_copy_uninit (struct supplemental_page_table *dst, 
+				struct supplemental_page_table *src, struct page* page) {
+	void *va = page->va;
+
+	if ((page->uninit.type & VM_MARKER_1)) {
+		void *aux = malloc (sizeof (struct load_segment_args));
+		if (aux == NULL) {
+			return false;
+		}
+		memcpy (aux, page->uninit.aux, sizeof (struct load_segment_args));
+		return vm_alloc_page_with_initializer (page->uninit.type, va, page->writable, page->uninit.init, aux);
+	}
+	return false;
+}
+

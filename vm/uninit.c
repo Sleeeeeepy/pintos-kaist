@@ -70,6 +70,9 @@ static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;
 	/* TODO: Fill this function.
-	 * TODO: If you don't have anything to do, just return. */
+	 * TODO: If you don't have anything to do, just return. */	
+	if (page->uninit.aux != NULL) {
+		free (page->uninit.aux);	
+	}
 	return;
 }
