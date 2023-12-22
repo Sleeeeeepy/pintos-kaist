@@ -48,7 +48,7 @@ struct task {
 	struct semaphore wait_lock; /* Lock for wait system call. */
 	struct list children;       /* List of child processes. */
 	struct intr_frame *if_;     /* Temporary interrupt frame. */
-	struct file* executable;    /* Executable file. */
+	struct file *executable;    /* Executable file. */
 	enum process_status status; /* Status of the process. */
 	int exit_code;              /* Exit code. */
 	void *args;                 /* Temporary argument for deterministic
@@ -61,7 +61,7 @@ bool task_set_thread (struct task *task, struct thread *thrd);
 bool task_set_status (struct task *task, enum process_status status);
 void task_inherit_initd (struct task *t);
 void task_free (struct task *t);
-void task_cleanup (struct task *t);
+void task_file_cleanup (struct task *t);
 size_t task_child_len (struct task *t);
 void task_fork_fd (struct task *parent, struct task *child);
 void task_exit (int status);

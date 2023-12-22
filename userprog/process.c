@@ -105,6 +105,10 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	child->parent_pid = parent->pid;
 	child->if_ = if_;
 	child_pid = child->pid;
+
+	// lock_acquire (&process_filesys_lock);
+	child->executable = file_reopen (parent->executable);
+	// lock_release (&process_filesys_lock);
 	thread = create_thread (name, PRI_DEFAULT, __do_fork, child);
 	if (thread != NULL) {
 		sema_down (&child->fork_lock);
@@ -206,6 +210,7 @@ __do_fork (void *aux) {
 
 	/* Finally, switch to the newly created process. */
 	if (succ) {
+		file_deny_write (task->executable);
 		list_push_back (&parent->children, &task->celem);
 		sema_up (&task->fork_lock);
 		do_iret (&if_);
@@ -311,7 +316,7 @@ process_exit (void) {
 	printf ("%s: exit(%d)\n", task->name, task->exit_code);
 	task_set_status (task, PROCESS_EXITED);
 	sema_up (&task->wait_lock);
-	task_cleanup (task);
+	task_file_cleanup (task);
 
 	/* If the current process has children, remove children. 
 	 * If there is child processes that aren't complete its task,
@@ -545,7 +550,9 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	return true;
 fail:
+	// lock_acquire (&process_filesys_lock);
 	file_close (file);
+	// lock_release (&process_filesys_lock);
 	return false;
 }
 
@@ -740,6 +747,29 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	struct load_segment_args *args = aux;
+	struct file *file = task_find_by_tid (thread_tid ())->executable;
+	uint32_t page_read_bytes = args->read_bytes;
+	uint32_t page_zero_bytes = args->zero_bytes;
+	uint8_t *upage = args->upage;
+	bool writable = args->writable;
+	bool error = false;
+	file_seek (file, args->offset);
+	
+	if (file_read (file, page->frame->kva, args->read_bytes) != (int) page_read_bytes) {
+		error = true;
+		goto cleanup;
+	}
+
+	memset (page->frame->kva + page_read_bytes, 0, page_zero_bytes);
+
+cleanup:
+	// where to remove aux? 
+	free (aux);
+	if (error) {
+		palloc_free_page (page->frame->kva);
+	}
+	return !error;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -771,15 +801,25 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+		struct load_segment_args *aux = malloc (sizeof (struct load_segment_args));
+		*aux = (struct load_segment_args) {
+		 	.offset = ofs,
+			.read_bytes = page_read_bytes,
+			.zero_bytes = page_zero_bytes,
+			.writable = writable,
+			.upage = upage
+		};
+		if (!vm_alloc_page_with_initializer (VM_ANON | VM_MARKER_1, upage,
+					writable, lazy_load_segment, (void *) aux))
 			return false;
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		
+		/* Update offset. */
+		ofs += page_read_bytes;	
 	}
 	return true;
 }
@@ -794,7 +834,14 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
+	if (!vm_alloc_page (VM_ANON | VM_MARKER_0, stack_bottom, true)) {
+		return false;
+	}
 
+	success = vm_claim_page (stack_bottom);
+	if (success) {
+		if_->rsp = USER_STACK;
+	}
 	return success;
 }
 #endif /* VM */
