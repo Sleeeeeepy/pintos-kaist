@@ -65,11 +65,16 @@ syscall_init (void) {
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 }
-
+/*여기 수정함 12/22*/
+/*커널 모드로 전환될 때 (시스템콜이 호출될 때) syscall_handler()에서 스택 포인터 저장*/
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-	switch (f->R.rax) {
+	int syscall_n=f->R.rax;
+	#ifdef VM
+		thread_current()->rsp=f->rsp;
+	#endif
+	switch (syscall_n) {
 		case SYS_HALT:
 			syscall_halt ();
 			break;
