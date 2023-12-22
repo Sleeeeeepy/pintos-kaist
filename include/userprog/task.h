@@ -71,4 +71,5 @@ fd_t task_find_original_fd (struct task* task, int fd);
 fd_t task_find_fd_map (struct task *task, int fd);
 bool task_inherit_fd (struct task *task, int fd);
 void fd_init (struct fd *fdt, fd_t fd);
+int allocate_fd (void);
 #endif

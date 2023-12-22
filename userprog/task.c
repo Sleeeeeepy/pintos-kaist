@@ -321,3 +321,18 @@ fd_init (struct fd *fdt, fd_t fd) {
 	fdt->file = NULL;
 	fdt->stdio = -1;
 }
+
+int
+allocate_fd (void) {
+	struct task *task = task_find_by_tid (thread_tid ());
+	
+	int fd = -1;
+	for (int i = 3; i <= MAX_FD; i++) {
+		if (task->fds[i].closed && task->fds[i].dup_count == 0) {
+			fd = i;
+			break;
+		}
+	}
+
+	return fd;
+}

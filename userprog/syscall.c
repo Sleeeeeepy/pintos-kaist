@@ -14,10 +14,10 @@
 #include "userprog/process.h"
 #include "userprog/gdt.h"
 #include "userprog/task.h"
+#include "vm/cr.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "intrinsic.h"
-
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -38,8 +38,8 @@ static void syscall_close (int fd);
 static int syscall_dup2 (int oldfd, int newfd);
 static int64_t get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
-static int allocate_fd (void);
-
+static bool assert_get_user (const uint8_t *uaddr, const size_t len);
+static bool assert_put_user (uint8_t *udst, const size_t len);
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -69,6 +69,7 @@ syscall_init (void) {
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
+	thread_current ()->intr_rsp = f->rsp;
 	switch (f->R.rax) {
 		case SYS_HALT:
 			syscall_halt ();
@@ -288,10 +289,19 @@ syscall_read (int fd, void *buffer, unsigned size) {
 		return -1;
 	}
 
+	
 	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
 		task_exit (-1);
 	}
 
+	cr0_wp_set ();
+	if (!put_user (buffer, get_user (buffer)) || 
+		!put_user (buffer, get_user (buffer + size))) {
+		cr0_wp_unset ();
+		task_exit (-1);
+	}
+	cr0_wp_unset ();
+	
 	if (task->fds[fd].stdio == 0) {
 		for (size_t i = 0; i < size; i++) {
 			bool result = put_user (buffer + i, input_getc());
@@ -303,6 +313,17 @@ syscall_read (int fd, void *buffer, unsigned size) {
 		return size;
 	}
 
+	struct page *page;
+	// if ((page = spt_find_page (&thread_current ()->spt, buffer)) == NULL) {
+	// 	task_exit (-1);
+	// }
+
+	// if (!page->writable) {
+	// 	task_exit (-1);
+	// }
+	// uint64_t *pte = pml4e_walk (thread_current ()->pml4, buffer, 0);
+	// printf ("writable: %s\n", is_writable (pte) ? "true" : "false");
+	// printf ("pte: %p\n", pte);
 	if (task->fds[fd].closed || task->fds[fd].file == NULL) {
 		return -1;
 	}
@@ -514,19 +535,4 @@ put_user (uint8_t *udst, uint8_t byte) {
 	"done_put:\n"
 	: "=&a" (error_code), "=m" (*udst) : "q" (byte));
 	return error_code != -1;
-}
-
-static int
-allocate_fd (void) {
-	struct task *task = task_find_by_tid (thread_tid ());
-	
-	int fd = -1;
-	for (int i = 3; i <= MAX_FD; i++) {
-		if (task->fds[i].closed && task->fds[i].dup_count == 0) {
-			fd = i;
-			break;
-		}
-	}
-
-	return fd;
 }

@@ -128,4 +128,15 @@ static __inline void write_msr(uint32_t ecx, uint64_t val) {
 			:: "c" (ecx), "d" (edx), "a" (eax) );
 }
 
+__attribute__((always_inline))
+static __inline uint64_t rcr0(void) {
+	uint64_t val;
+	__asm __volatile("movq %%cr0,%0" : "=r" (val));
+	return val;
+}
+
+__attribute__((always_inline))
+static __inline void lcr0(uint64_t val) {
+	__asm __volatile("movq %0, %%cr0" : : "r" (val));
+}
 #endif /* intrinsic.h */

@@ -106,6 +106,8 @@ struct thread {
 	struct list_elem telem;				/* Thread list element. */
 	int nice;							/* Niceness */
 	fixed recent_cpu;					/* Recent CPU time. */
+	/* RSP in context changing. */
+	uintptr_t intr_rsp;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */

@@ -4,6 +4,7 @@
 #include <hash.h>
 #include "threads/palloc.h"
 
+#define MAX_STACK_SIZE (1 << 20)	/* 1 MB */
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,

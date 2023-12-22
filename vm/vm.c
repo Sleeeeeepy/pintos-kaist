@@ -20,6 +20,7 @@ static bool page_copy_file (struct supplemental_page_table *dst,
 				struct supplemental_page_table *src, struct page* page);
 static bool page_copy_uninit (struct supplemental_page_table *dst, 
 				struct supplemental_page_table *src, struct page* page);
+static inline bool is_within_stack_boundary (uintptr_t addr, uintptr_t rsp);
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -184,8 +185,17 @@ vm_get_frame (void) {
 }
 
 /* Growing the stack. */
-static void
+static bool
 vm_stack_growth (void *addr UNUSED) {
+	if (!vm_alloc_page (VM_ANON | VM_MARKER_0, pg_round_down (addr), true)) {
+		return false;
+	}
+
+	if (!vm_claim_page (pg_round_down (addr))) {
+		return false;
+	}
+
+	return true;
 }
 
 /* Handle the fault on write_protected page */
@@ -210,16 +220,29 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		return false;
 	}
 
-	// It's present, but page fault occured. it's also a bug.
+	/* It's present, but page fault occured. it's also a bug. */
 	if (!not_present) {
 		return false;
 	}
 
-	if ((page = spt_find_page (spt, addr)) == NULL) {
-		return false;
+	/* If the page is exist, claim it. */
+	if ((page = spt_find_page (spt, addr)) != NULL) {
+		return vm_do_claim_page (page);
 	}
 
-	return vm_do_claim_page (page);
+	/* Try stack growth */
+	{
+		uintptr_t rsp = f->rsp;
+		if (!user) {
+			rsp = thread_current ()->intr_rsp;
+		}
+
+		if (is_within_stack_boundary ((uintptr_t) addr, rsp)) {
+			return vm_stack_growth (addr);
+		}
+	}
+
+	return false;
 }
 
 /* Free the page.
@@ -259,7 +282,9 @@ vm_do_claim_page (struct page *page) {
 		return false;
 	}
 
-	pml4_set_page (thread_current ()->pml4, page->va, frame->kva, page->writable);
+	if (!pml4_set_page (thread_current ()->pml4, page->va, frame->kva, page->writable)) {
+		return false;
+	}
 	return swap_in (page, frame->kva);
 }
 
@@ -405,3 +430,8 @@ page_copy_uninit (struct supplemental_page_table *dst,
 	return false;
 }
 
+static inline bool
+is_within_stack_boundary (uintptr_t addr, uintptr_t rsp) {
+	static const boundary = USER_STACK - MAX_STACK_SIZE;
+	return	boundary <= addr && USER_STACK >= addr && rsp - 8 <= addr;
+}
