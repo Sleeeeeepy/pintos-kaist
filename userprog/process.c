@@ -26,7 +26,6 @@
 #include "vm/vm.h"
 #endif
 
-static struct lock child_lock;
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *task);
@@ -329,11 +328,9 @@ process_exit (void) {
 	 * It's named daemon, but it's not actually a daemon, 
 	 * which could potentially cause an error.
 	 */
-	lock_acquire (&child_lock);
 	if (task_child_len (task) != 0) {
 		task_inherit_initd (task);
 	}
-	lock_release (&child_lock);
 
 	/* If there is no the parent process, then remove immediately. */
 	if (task->parent_pid < 0) {
