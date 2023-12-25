@@ -36,6 +36,8 @@ static void syscall_seek (int fd, unsigned pos);
 static unsigned syscall_tell (int fd);
 static void syscall_close (int fd); 
 static int syscall_dup2 (int oldfd, int newfd);
+static void *syscall_mmap (void *addr, size_t length, bool writable, int fd, off_t offset);
+static void syscall_munmap (void *addr);
 static int64_t get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
 /* System call.
@@ -112,7 +114,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			syscall_close (f->R.rdi);
 			break;
 		case SYS_MMAP:
+			f->R.rax = syscall_mmap (f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
 		case SYS_MUNMAP:
+			syscall_munmap (f->R.rdi);
+			break;
 		case SYS_CHDIR:
 		case SYS_MKDIR:
 		case SYS_READDIR:
