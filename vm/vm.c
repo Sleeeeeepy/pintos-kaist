@@ -320,7 +320,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		}
 
 		if (!success) {
-			// TODO: clean up dst table
+			hash_clear (&dst->page_map, page_map_destruct);
 			goto fail;
 		}
 
@@ -328,6 +328,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 			struct page *cpage = spt_find_page (dst, page->va);
 			if (cpage == NULL) {
 				success = false;
+				hash_clear (&dst->page_map, page_map_destruct);
 				goto fail;
 			}
 			memcpy (cpage->frame->kva, page->frame->kva, PGSIZE);
@@ -420,11 +421,11 @@ page_copy_uninit (struct supplemental_page_table *dst,
 	void *va = page->va;
 
 	if ((page->uninit.type & VM_MARKER_1)) {
-		void *aux = malloc (sizeof (struct load_segment_args));
+		void *aux = malloc (sizeof (struct lazy_load_args));
 		if (aux == NULL) {
 			return false;
 		}
-		memcpy (aux, page->uninit.aux, sizeof (struct load_segment_args));
+		memcpy (aux, page->uninit.aux, sizeof (struct lazy_load_args));
 		return vm_alloc_page_with_initializer (page->uninit.type, va, page->writable, page->uninit.init, aux);
 	}
 	return false;

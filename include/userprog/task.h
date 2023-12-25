@@ -39,6 +39,7 @@ enum process_status {
 struct task {
 	char *name;                 /* Name of the process. */
 	pid_t pid;                  /* Process ID. */
+	tid_t tid;					/* Thread ID. */
 	struct thread *thread;      /* The thread currently running the task. */
 	pid_t parent_pid;           /* PID of parent process. */
 	struct list_elem elem;      /* List element for PCB */

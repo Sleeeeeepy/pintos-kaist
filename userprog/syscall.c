@@ -38,8 +38,6 @@ static void syscall_close (int fd);
 static int syscall_dup2 (int oldfd, int newfd);
 static int64_t get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
-static bool assert_get_user (const uint8_t *uaddr, const size_t len);
-static bool assert_put_user (uint8_t *udst, const size_t len);
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -296,7 +294,7 @@ syscall_read (int fd, void *buffer, unsigned size) {
 
 	cr0_wp_set ();
 	if (!put_user (buffer, get_user (buffer)) || 
-		!put_user (buffer, get_user (buffer + size))) {
+		!put_user (buffer + size, get_user (buffer + size))) {
 		cr0_wp_unset ();
 		task_exit (-1);
 	}
@@ -314,16 +312,6 @@ syscall_read (int fd, void *buffer, unsigned size) {
 	}
 
 	struct page *page;
-	// if ((page = spt_find_page (&thread_current ()->spt, buffer)) == NULL) {
-	// 	task_exit (-1);
-	// }
-
-	// if (!page->writable) {
-	// 	task_exit (-1);
-	// }
-	// uint64_t *pte = pml4e_walk (thread_current ()->pml4, buffer, 0);
-	// printf ("writable: %s\n", is_writable (pte) ? "true" : "false");
-	// printf ("pte: %p\n", pte);
 	if (task->fds[fd].closed || task->fds[fd].file == NULL) {
 		return -1;
 	}
