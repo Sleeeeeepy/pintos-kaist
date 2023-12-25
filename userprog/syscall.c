@@ -496,6 +496,55 @@ syscall_dup2 (int oldfd, int newfd) {
 	return newfd_copy;
 }
 
+static void *
+syscall_mmap (void *addr, size_t length, bool writable, int fd, off_t offset) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct task *task = task_find_by_tid (thread_tid ());
+	struct page *page;
+	if ((uintptr_t) addr % PGSIZE != 0 || addr == NULL || !is_user_vaddr (addr)) {
+		return NULL;
+	}
+
+	if (length > 0 && addr > UINT64_MAX - length) {
+		return NULL;
+	}
+
+	fd = task_find_fd_map (task, fd);
+	if (task->fds[fd].stdio != -1) {
+		task_exit (-1);
+	}
+
+	if (task->fds[fd].file == NULL) {
+		return NULL;
+	}
+
+	if (file_length (task->fds[fd].file) <= 0) {
+		return NULL;
+	}
+
+	if (file_length (task->fds[fd].file) <= offset) {
+		return NULL;
+	}
+	
+	if (length == 0) {
+		return NULL;
+	}
+
+	if ((page = spt_find_page (spt, addr)) != NULL) {
+		return NULL;
+	}
+
+	return do_mmap (addr, length, writable, file_reopen (task->fds[fd].file), offset);
+}
+
+static void
+syscall_munmap (void *addr) {
+	if ((uintptr_t) addr % PGSIZE != 0 || addr == NULL || !is_user_vaddr (addr)) {
+		return;
+	}
+
+	do_munmap (addr);
+}
 /* Reads a byte at user virtual address UADDR.
  * UADDR must be below KERN_BASE.
  * Returns the byte value if successful, -1 if a segfault
