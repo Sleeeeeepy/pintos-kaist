@@ -65,11 +65,17 @@ syscall_init (void) {
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 }
-
+/* Modified here 12/22 */
+/* When switching to kernel mode (when a system call is invoked), save the stack pointer in syscall_handler() */
 /* The main system call interface */
+
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-	switch (f->R.rax) {
+	int syscall_n=f->R.rax;
+	#ifdef VM
+		thread_current()->rsp=f->rsp;
+	#endif
+	switch (syscall_n) {
 		case SYS_HALT:
 			syscall_halt ();
 			break;
@@ -113,6 +119,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			syscall_close (f->R.rdi);
 			break;
 		case SYS_MMAP:
+	        f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+        	break;
 		case SYS_MUNMAP:
 		case SYS_CHDIR:
 		case SYS_MKDIR:
@@ -364,6 +372,48 @@ syscall_seek (int fd, unsigned pos) {
 	lock_acquire (&process_filesys_lock);
 	file_seek (task->fds[fd].file, pos);
 	lock_release (&process_filesys_lock);
+}
+
+// //여기 수정함 12/25
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+    struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct task *task = task_find_by_tid (thread_tid ());
+	struct page *page;
+	if ((uintptr_t) addr % PGSIZE != 0 || addr == NULL || !is_user_vaddr (addr)) {
+		return NULL;
+	}
+
+	if (length > 0 && addr > UINT64_MAX - length) {
+		return NULL;
+	}
+
+	fd = task_find_fd_map (task, fd);
+	if (task->fds[fd].stdio != -1) {
+		task_exit (-1);
+	}
+
+	if (task->fds[fd].file == NULL) {
+		return NULL;
+	}
+
+	if (file_length (task->fds[fd].file) <= 0) {
+		return NULL;
+	}
+
+	if (file_length (task->fds[fd].file) <= offset) {
+		return NULL;
+	}
+	
+	if (length == 0) {
+		return NULL;
+	}
+
+	if ((page = spt_find_page (spt, addr)) != NULL) {
+		return NULL;
+	}
+
+	return do_mmap (addr, length, writable, file_reopen (task->fds[fd].file), offset);
 }
 
 static unsigned

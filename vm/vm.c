@@ -183,43 +183,61 @@ vm_get_frame (void) {
 	return frame;
 }
 
+/* Modification - December 22, 2022 /
 /* Growing the stack. */
-static void
-vm_stack_growth (void *addr UNUSED) {
-}
+/* To-Do: Allocate one or more anon pages to increase the stack size in such a way that the given address (addr) no longer qualifies as a faulted address.
+When allocating, round down the addr to PGSIZE for handling. */
 
+static void
+vm_stack_growth (void *addr UNUSED)
+{
+ 
+    vm_alloc_page (VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
+}
 /* Handle the fault on write_protected page */
 static bool
 vm_handle_wp (struct page *page UNUSED) {
 }
 
+
+/* Modification - December 22, 2022 /
 /* Return true on success */
-bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
-	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
-	if (addr == NULL) {
-		return false;
-	}
+bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
+                         bool user UNUSED, bool write UNUSED, bool not_present UNUSED)
+{
+    struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+    struct page *page = NULL;
+    if (addr == NULL)
+        return false;
 
-	/* If fault address is kernel page, then it's a kernel bug. */
-	if (is_kernel_vaddr (addr)) {
-		return false;
-	}
+    if (is_kernel_vaddr(addr))
+        return false;
+	/*When the physical page of accessed memory does not exist...*/
+    if (not_present) 
+    {
+        /* TODO: Validate the fault */
+		/*It checks whether the page fault is a valid case for stack expansion.*/
+        void *rsp = f->rsp; /*In the case of user access, rsp points to the user stack.*/ 
 
-	// It's present, but page fault occured. it's also a bug.
-	if (!not_present) {
-		return false;
-	}
+		/*In the case of kernel access, the rsp should be obtained from the thread*/
+        if (!user)           
+            rsp = thread_current()->rsp;
 
-	if ((page = spt_find_page (spt, addr)) == NULL) {
-		return false;
-	}
+        /*If it is a fault that can be handled by stack expansion, call vm_stack_growth.*/
+        if (USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK)
+            vm_stack_growth(addr);
+        else if (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK)
+            vm_stack_growth(addr);
 
-	return vm_do_claim_page (page);
+        page = spt_find_page(spt, addr);
+        if (page == NULL)
+            return false;
+			/*When a write request is made to a page that is not writable...*/
+        if (write == 1 && page->writable == 0) 
+            return false;
+        return vm_do_claim_page(page);
+    }
+    return false;
 }
 
 /* Free the page.
@@ -296,6 +314,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 
 		if (!success) {
 			// TODO: clean up dst table
+			hash_clear(&dst->page_map,page_map_destruct);
 			goto fail;
 		}
 

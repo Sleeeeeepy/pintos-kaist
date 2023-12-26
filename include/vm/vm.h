@@ -42,6 +42,8 @@ struct thread;
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
 struct page {
+		//12월 26일 추가함
+	int mapped_page_count;
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
@@ -50,6 +52,7 @@ struct page {
 	struct hash_elem elem;
 	bool writable;		   /* Is this page writable or not? */
 	bool swap;			   /* Is this page in swap disk? */
+
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
@@ -90,7 +93,14 @@ struct page_operations {
 struct supplemental_page_table {
 	struct hash page_map;
 };
-
+struct lazy_load_arg{
+	struct file* file;
+	off_t offset;
+	size_t read_bytes;
+	size_t zero_bytes;
+	void *upage;
+	bool writable;
+};
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
 bool supplemental_page_table_copy (struct supplemental_page_table *dst,

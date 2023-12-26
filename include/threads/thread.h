@@ -105,7 +105,9 @@ struct thread {
 	/* BSD Scheduling */
 	struct list_elem telem;				/* Thread list element. */
 	int nice;							/* Niceness */
-	fixed recent_cpu;					/* Recent CPU time. */
+	fixed recent_cpu;	
+	
+					/* Recent CPU time. */
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -113,6 +115,9 @@ struct thread {
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
+	
+/* Modified here on December 22nd */
+	void *rsp;
 #endif
 
 	/* Owned by thread.c. */
