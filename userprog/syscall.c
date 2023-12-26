@@ -298,13 +298,13 @@ syscall_read (int fd, void *buffer, unsigned size) {
 		task_exit (-1);
 	}
 
-	cr0_wp_set ();
+	wp_enable ();
 	if (!put_user (buffer, get_user (buffer)) || 
 		!put_user (buffer + size, get_user (buffer + size))) {
-		cr0_wp_unset ();
+		wp_disable ();
 		task_exit (-1);
 	}
-	cr0_wp_unset ();
+	wp_disable ();
 	
 	if (task->fds[fd].stdio == 0) {
 		for (size_t i = 0; i < size; i++) {
