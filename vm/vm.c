@@ -314,6 +314,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 
 		if (!success) {
 			// TODO: clean up dst table
+			hash_clear(&dst->page_map,page_map_destruct);
 			goto fail;
 		}
 
