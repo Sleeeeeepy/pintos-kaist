@@ -54,5 +54,4 @@ anon_destroy (struct page *page) {
 	if (page->frame != NULL) {
 		free (page->frame);
 	}
-	return;
 }

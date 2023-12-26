@@ -75,5 +75,4 @@ uninit_destroy (struct page *page) {
 	if (page->uninit.aux != NULL) {
 		free (page->uninit.aux);	
 	}
-	return;
 }
