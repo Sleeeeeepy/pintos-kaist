@@ -35,7 +35,6 @@ struct task *
 task_create (const char *file_name, struct thread* thread) {
 	char *fn_copy;
 	struct task *t;
-	pid_t pid;
 	char *args_begin;
 	size_t name_len;
 
@@ -60,7 +59,7 @@ task_create (const char *file_name, struct thread* thread) {
 	strlcpy (fn_copy, file_name, name_len);
 	t->name = fn_copy;
 	t->thread = thread;
-	pid = t->pid = allocate_pid ();
+	t->pid = allocate_pid ();
 	lock_acquire (&task_lock);
 	list_push_back (&process_list, &t->elem);
 	lock_release (&task_lock);
@@ -292,7 +291,7 @@ task_find_original_fd (struct task* task, int fd) {
 
 fd_t 
 task_find_fd_map (struct task *task, int fd) {
-	for (size_t i = 0; i < MAX_FD; i++) {
+	for (int i = 0; i < MAX_FD; i++) {
 		if (fd == task->fds[i].fd_map) {
 			return i;
 		}
@@ -305,7 +304,7 @@ bool
 task_inherit_fd (struct task *task, int fd) {
 	/* Find successor first */
 	int successor = -1;
-	for (size_t i = 0; i < MAX_FD; i++) {
+	for (int i = 0; i < MAX_FD; i++) {
 		if (task->fds[i].fd == fd && i != fd) {
 			successor = i;
 			break;
@@ -317,7 +316,7 @@ task_inherit_fd (struct task *task, int fd) {
 	}
 
 	/* Update fd. */
-	for (size_t i = 0; i < MAX_FD; i++) {
+	for (int i = 0; i < MAX_FD; i++) {
 		if (task->fds[i].fd == fd && i != fd) {
 			task->fds[i].fd = successor;
 		}
