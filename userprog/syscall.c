@@ -151,6 +151,14 @@ syscall_exit (int status) {
 
 static int
 syscall_fork (const char *thread_name, struct intr_frame *if_) {
+	if (!is_user_vaddr (thread_name)) {
+		task_exit (-1);
+	}
+
+	if (get_user (thread_name) == -1) {
+		task_exit (-1);
+	}
+
 	return process_fork (thread_name, if_);
 }
 
@@ -160,6 +168,10 @@ syscall_exec (const char *cmd_line) {
 	char* fn_copy;
 	if (task == NULL) {
 		return -1;
+	}
+
+	if (!is_user_vaddr (cmd_line)) {
+		task_exit (-1);
 	}
 
 	if (get_user (cmd_line) == -1) {
@@ -195,6 +207,10 @@ syscall_create (const char *file, unsigned initial_size) {
 		return -1;
 	}
 
+	if (!is_user_vaddr (file)) {
+		task_exit (-1);
+	}
+
 	if (get_user (file) == -1) {
 		task_exit (-1);
 	}
@@ -213,6 +229,10 @@ syscall_remove (const char *file) {
 		return -1;
 	}
 
+	if (!is_user_vaddr (file)) {
+		task_exit (-1);
+	}
+
 	if (get_user (file) == -1) {
 		task_exit (-1);
 	}
@@ -228,6 +248,10 @@ syscall_open (const char *file) {
 	struct task *task = task_find_by_tid (thread_tid ());
 	if (task == NULL) {
 		return -1;
+	}
+
+	if (!is_user_vaddr (file)) {
+		task_exit (-1);
 	}
 
 	if (get_user (file) == -1) {
@@ -288,12 +312,14 @@ syscall_read (int fd, void *buffer, unsigned size) {
 	}
 	
 	fd = task_find_fd_map (task, fd);
-
 	if (fd < 0 || fd >= MAX_FD) {
 		return -1;
 	}
 
-	
+	if (!is_user_vaddr (buffer) || !is_user_vaddr (buffer + size)) {
+		task_exit (-1);
+	}
+
 	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
 		task_exit (-1);
 	}
@@ -335,12 +361,15 @@ syscall_write (int fd, void *buffer, unsigned size) {
 		return -1;
 	}
 
-	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
+	if (!is_user_vaddr (buffer) || !is_user_vaddr (buffer + size)) {
+		task_exit (-1);
+	}
+
+ 	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
 		task_exit (-1);
 	}
 
 	fd = task_find_fd_map (task, fd);
-
 	if (fd < 0 || fd >= MAX_FD) {
 		return -1;
 	}
@@ -507,14 +536,18 @@ syscall_mmap (void *addr, size_t length, bool writable, int fd, off_t offset) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct task *task = task_find_by_tid (thread_tid ());
 	struct page *page;
-	if ((uintptr_t) addr % PGSIZE != 0 || addr == NULL || !is_user_vaddr (addr)) {
+	if (addr == NULL || !is_user_vaddr (addr)) {
+		return NULL;
+	}
+
+	if ((uintptr_t) addr % PGSIZE != 0 || offset % PGSIZE != 0) {
 		return NULL;
 	}
 
 	if (length > 0 && addr > UINT64_MAX - length) {
 		return NULL;
 	}
-
+	
 	fd = task_find_fd_map (task, fd);
 	if (task->fds[fd].stdio != -1) {
 		task_exit (-1);
