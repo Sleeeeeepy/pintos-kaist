@@ -13,7 +13,6 @@ struct lazy_load_args {
     uint32_t zero_bytes;
     uint8_t *addr;
     bool writable;
-    bool file_deallocatable;
 };
 
 struct lock process_filesys_lock;

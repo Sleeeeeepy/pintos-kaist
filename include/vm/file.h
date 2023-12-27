@@ -8,8 +8,8 @@ enum vm_type;
 
 struct file_page {
 	struct file *file;
-	bool file_deallocatable;
 	size_t read_bytes;
+	size_t zero_bytes;
 	off_t offset;
 };
 

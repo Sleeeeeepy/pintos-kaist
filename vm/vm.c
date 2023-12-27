@@ -9,6 +9,7 @@
 #include "vm/inspect.h"
 #include "filesys/page_cache.h"
 
+#define FRAME_POOL_SIZE 100
 static struct page *page_lookup (struct supplemental_page_table *spt, void *addr);
 static bool page_less (const struct hash_elem *a_,
 					const struct hash_elem *b_, void *aux UNUSED);
@@ -21,6 +22,14 @@ static bool page_copy_file (struct supplemental_page_table *dst,
 static bool page_copy_uninit (struct supplemental_page_table *dst, 
 				struct supplemental_page_table *src, struct page* page);
 static inline bool is_within_stack_boundary (uintptr_t addr, uintptr_t rsp);
+static void frame_pool_init (size_t size);
+static struct list frame_pool;
+static struct lock frame_lock;
+static size_t frame_pool_size;
+
+/* List of frames in use */
+static struct list frame_list;
+static struct list_elem *next_victim = NULL;
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -33,6 +42,8 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	frame_pool_init (FRAME_POOL_SIZE);
+	list_init (&frame_list);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -81,8 +92,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			case VM_UNINIT:
 			default:
 				NOT_REACHED ();
-				// free (page);
-				// goto err;
 			case VM_ANON:
 				initializer = anon_initializer;
 				break;
@@ -95,7 +104,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		}	
 		uninit_new (page, upage, init, type, aux, initializer);
 		page->writable = writable;
-
+		page->tid = thread_tid ();
 		/* TODO: Insert the page into the spt. */
 		if (!spt_insert_page (spt, page)) {
 			free (page);
@@ -136,8 +145,10 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
-	 /* TODO: The policy for eviction is up to you. */
-
+	bool found = false;
+	lock_acquire (&frame_lock);
+	victim = list_entry (list_pop_front (&frame_list), struct frame, felem);
+	lock_release (&frame_lock);
 	return victim;
 }
 
@@ -147,8 +158,10 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-
-	return NULL;
+	ASSERT (victim != NULL);
+	ASSERT (victim->page != NULL);
+	swap_out (victim->page);
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -157,9 +170,8 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = malloc (sizeof (frame));
+	struct frame *frame = frame_get ();
 	if (frame == NULL) {
-		PANIC ("todo");
 		/* we need sizeof (struct frame) / 4096 * MEM_SIZE bytes of
 		 * pre-allocated block in kernel pool. for example, if total memory of
 		 * the system is 4 MB, and the size of metadata is 16 byte
@@ -173,15 +185,21 @@ vm_get_frame (void) {
 	void *kva = palloc_get_page (PAL_USER | PAL_ZERO);
 	frame->kva = kva;
 	frame->page = NULL;
-
 	if (frame->kva == NULL) {
-		PANIC ("todo");
-		/* TODO: evict here. */
+		frame_return (frame);
+		struct frame *victim = vm_evict_frame ();
+		victim->page = NULL;
+		frame = victim;
 	}
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 	return frame;
+}
+
+void
+vm_free_frame (struct frame *frame, bool cleanup) {
+	return;
 }
 
 /* Growing the stack. */
@@ -231,15 +249,13 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	}
 
 	/* Try stack growth */
-	{
-		uintptr_t rsp = f->rsp;
-		if (!user) {
-			rsp = thread_current ()->intr_rsp;
-		}
+	uintptr_t rsp = f->rsp;
+	if (!user) {
+		rsp = thread_current ()->intr_rsp;
+	}
 
-		if (is_within_stack_boundary ((uintptr_t) addr, rsp)) {
-			return vm_stack_growth (addr);
-		}
+	if (is_within_stack_boundary ((uintptr_t) addr, rsp)) {
+		return vm_stack_growth (addr);
 	}
 
 	return false;
@@ -268,9 +284,10 @@ vm_claim_page (void *va UNUSED) {
 /* Claim the PAGE and set up the mmu. */
 static bool
 vm_do_claim_page (struct page *page) {
+	bool success = false;
 	struct frame *frame = vm_get_frame ();
 	if (frame == NULL) {
-		return false;
+		goto end;
 	}
 
 	/* Set links */
@@ -279,13 +296,27 @@ vm_do_claim_page (struct page *page) {
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	if (pml4_get_page (thread_current ()->pml4, page->va) != NULL) {
-		return false;
+		goto end;
 	}
 
 	if (!pml4_set_page (thread_current ()->pml4, page->va, frame->kva, page->writable)) {
-		return false;
+		goto end;
 	}
-	return swap_in (page, frame->kva);
+
+	if (!(success = swap_in (page, frame->kva))) {
+		goto end;
+	}
+
+end:
+	if (!success) {
+		frame_return (frame);
+		return success;
+	}
+
+	lock_acquire (&frame_lock);
+	list_push_back (&frame_list, &frame->felem);
+	lock_release (&frame_lock);
+	return success;
 }
 
 /* Initialize new supplemental page table */
@@ -320,7 +351,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		}
 
 		if (!success) {
-			hash_clear (&dst->page_map, page_map_destruct);
 			goto fail;
 		}
 
@@ -328,7 +358,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 			struct page *cpage = spt_find_page (dst, page->va);
 			if (cpage == NULL) {
 				success = false;
-				hash_clear (&dst->page_map, page_map_destruct);
 				goto fail;
 			}
 			memcpy (cpage->frame->kva, page->frame->kva, PGSIZE);
@@ -336,6 +365,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 	}
 
 fail:
+	if (!success) {
+		hash_clear (&dst->page_map, page_map_destruct);
+	}
 	return success;
 }
 
@@ -375,34 +407,18 @@ page_hash (const struct hash_elem *p_, void *aux UNUSED) {
 }
 
 static void
-page_map_destruct (struct hash_elem *e, void *aux) {
+page_map_destruct (struct hash_elem *e, void *aux UNUSED) {
 	struct page *page = hash_entry (e, struct page, elem);
 	if (page == NULL) {
 		return;
 	}
-
+	
 	vm_dealloc_page (page);
 }
 
 static bool
-page_copy_anon (struct supplemental_page_table *dst, 
-				struct supplemental_page_table *src, struct page* page) {
-	void *va = page->va;
-	struct intr_frame *if_ = &thread_current ()->tf;
-	if (!vm_alloc_page (page->operations->type, va, page->writable)) {
-		return false;
-	}
-
-	if (!vm_claim_page (va)) {
-		return false;
-	}
-
-	return true;
-}
-
-static bool
-page_copy_file (struct supplemental_page_table *dst, 
-				struct supplemental_page_table *src, struct page* page) {
+page_copy_anon (struct supplemental_page_table *dst UNUSED, 
+				struct supplemental_page_table *src UNUSED, struct page* page) {
 	void *va = page->va;
 	if (!vm_alloc_page (page->operations->type, va, page->writable)) {
 		return false;
@@ -416,8 +432,23 @@ page_copy_file (struct supplemental_page_table *dst,
 }
 
 static bool
-page_copy_uninit (struct supplemental_page_table *dst, 
-				struct supplemental_page_table *src, struct page* page) {
+page_copy_file (struct supplemental_page_table *dst UNUSED, 
+				struct supplemental_page_table *src UNUSED, struct page* page) {
+	void *va = page->va;
+	if (!vm_alloc_page (page->operations->type, va, page->writable)) {
+		return false;
+	}
+
+	if (!vm_claim_page (va)) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool
+page_copy_uninit (struct supplemental_page_table *dst UNUSED, 
+				  struct supplemental_page_table *src UNUSED, struct page* page) {
 	void *va = page->va;
 
 	if ((page->uninit.type & VM_MARKER_1)) {
@@ -433,6 +464,44 @@ page_copy_uninit (struct supplemental_page_table *dst,
 
 static inline bool
 is_within_stack_boundary (uintptr_t addr, uintptr_t rsp) {
-	static const boundary = USER_STACK - MAX_STACK_SIZE;
+	static const uintptr_t boundary = USER_STACK - MAX_STACK_SIZE;
 	return	boundary <= addr && USER_STACK >= addr && rsp - 8 <= addr;
+}
+
+static void
+frame_pool_init (size_t size) {
+	lock_init (&frame_lock);
+	list_init (&frame_pool);
+	for (size_t i = 0; i < size; i++) {
+		struct frame *frame = calloc (1, sizeof (struct frame));
+		if (frame == NULL) {
+			PANIC ("Failed to initalize frame pool.");
+		}
+		list_push_back (&frame_pool, &frame->elem);
+		frame_pool_size += 1;
+	}
+}
+
+struct frame *
+frame_get (void) {
+	struct frame *frame = NULL;
+	lock_acquire (&frame_lock);
+	if (frame_pool_size > 0) {
+		frame = list_entry (list_pop_front (&frame_pool), struct frame, elem);
+		frame_pool_size -= 1;
+		memset (frame, 0x00, sizeof (struct frame));
+	} else {
+		frame = calloc (1, sizeof (struct frame));
+	}
+	lock_release (&frame_lock);
+	return frame;
+}
+
+void
+frame_return (struct frame *frame) {
+	lock_acquire (&frame_lock);
+	frame_pool_size += 1;
+	frame->page = NULL;
+	list_push_back (&frame_pool, &frame->elem);
+	lock_release (&frame_lock);
 }
