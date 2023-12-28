@@ -55,8 +55,11 @@ ENV STRIP ${CROSS_COMPILE}strip
 ```
 
 상기 `Dockerfile`을 저장한 뒤 다음 지침에 따르세요.
+0. Docker Desktop을 설치하고 실행하세요. Docker Desktop 좌측 하단에 Docker Engine이 Running 상태임을 확인하세요. 그리고 터미널을 켜 아래 명령어를 타이핑합니다.
 1. `docker build -t <image_name> .`
 2. `docker run -it --name <container_name> <image_name>`
+3. 터미널을 종료하고 컨테이너를 재시작합니다.
+4. 만약 Visual Studio Code를 사용하면 Remote Development, Docker 확장을 설치하고 Attach Visual Studio Code를 해보세요.
 
 ### 기타
 디버깅은 `gdb`가 아니라 `gdb-multiarch`를 이용합니다. 그리고 절대 gcc 혹은 build-essential을 설치하지 마세요. 심볼릭 링크 만든 것을 덮어 씌워버립니다!
