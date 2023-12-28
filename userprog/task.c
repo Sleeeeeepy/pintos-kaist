@@ -8,6 +8,7 @@
 #include "threads/malloc.h"
 #include "threads/init.h"
 #include "threads/palloc.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -18,19 +19,22 @@ static struct list process_list;
 /* Lock used by allocate_pid(). */
 static struct lock pid_lock;
 
+/* Lock for tasks. */
+static struct lock task_lock;
+
 static pid_t allocate_pid (void);
 static void init_process (struct task *task);
 
 void task_init (void) {
-	lock_init (&pid_lock);
 	list_init (&process_list);
+	lock_init (&pid_lock);
+	lock_init (&task_lock);
 }
 
 struct task *
 task_create (const char *file_name, struct thread* thread) {
 	char *fn_copy;
 	struct task *t;
-	pid_t pid;
 	char *args_begin;
 	size_t name_len;
 
@@ -55,10 +59,12 @@ task_create (const char *file_name, struct thread* thread) {
 	strlcpy (fn_copy, file_name, name_len);
 	t->name = fn_copy;
 	t->thread = thread;
-	pid = t->pid = allocate_pid ();
+	t->pid = allocate_pid ();
+	lock_acquire (&task_lock);
 	list_push_back (&process_list, &t->elem);
-
+	lock_release (&task_lock);
 	if (thread != NULL) {
+		t->tid = thread->tid;
 		t->status = PROCESS_READY;
 	}
 	return t;
@@ -74,8 +80,11 @@ task_set_thread (struct task *task, struct thread *thrd) {
 		return false;
 	}
 
+	lock_acquire (&task_lock);
 	task->thread = thrd;
+	task->tid = thrd->tid;
 	task_set_status (task, PROCESS_READY);
+	lock_release (&task_lock);
 	return true;
 }
 
@@ -127,10 +136,11 @@ task_free (struct task *t) {
 	if (t == NULL) {
 		return;
 	}
-
+	lock_acquire (&task_lock);
 	list_remove(&t->elem);
 	free (t->name);
 	palloc_free_page (t);
+	lock_release (&task_lock);
 }
 
 void 
@@ -151,6 +161,7 @@ task_file_cleanup (struct task *t) {
 
 void 
 task_fork_fd (struct task *parent, struct task *child) {
+	lock_acquire (&task_lock);
 	for (size_t i = 0; i < MAX_FD; i++) {
 		if (parent->fds[i].file != NULL && !parent->fds[i].duplicated) {
 			child->fds[i].file = file_duplicate (parent->fds[i].file);
@@ -166,6 +177,7 @@ task_fork_fd (struct task *parent, struct task *child) {
 		child->fds[i].fd_map = parent->fds[i].fd_map;
 		child->fds[i].stdio = parent->fds[i].stdio;
 	}
+	lock_release (&task_lock);
 }
 
 void 
@@ -181,6 +193,7 @@ task_exit (int status) {
 
 struct task *
 task_find_by_pid (pid_t pid) {
+	lock_acquire (&task_lock);
 	struct list_elem *e = NULL;
 	struct task *t = NULL;
 	struct task *found = NULL;
@@ -191,29 +204,34 @@ task_find_by_pid (pid_t pid) {
 			break;
 		}
 	}
-
+	lock_release (&task_lock);
 	return found; 
 }
 
 struct task *
 task_find_by_tid (tid_t tid) {
+	lock_acquire (&task_lock);
 	struct list_elem *e = NULL;
 	struct task *t = NULL;
 	struct task *found = NULL;
 	for (e = list_begin (&process_list); e != list_end (&process_list); e = list_next (e)) {
 		t = list_entry(e, struct task, elem);
-		if (t->thread != NULL && t->thread->tid == tid) {
+		if (t->thread != NULL && t->tid == tid) {
 			found = t;
 			break;
 		}
 	}
+	lock_release (&task_lock);
 
 	return found;
 }
 
 size_t
 task_child_len (struct task *t) {
-	return list_size (&t->children);
+	lock_acquire (&task_lock);
+	size_t size = list_size (&t->children);
+	lock_release (&task_lock);
+	return size;
 }
 
 static pid_t
@@ -273,7 +291,7 @@ task_find_original_fd (struct task* task, int fd) {
 
 fd_t 
 task_find_fd_map (struct task *task, int fd) {
-	for (size_t i = 0; i < MAX_FD; i++) {
+	for (int i = 0; i < MAX_FD; i++) {
 		if (fd == task->fds[i].fd_map) {
 			return i;
 		}
@@ -286,7 +304,7 @@ bool
 task_inherit_fd (struct task *task, int fd) {
 	/* Find successor first */
 	int successor = -1;
-	for (size_t i = 0; i < MAX_FD; i++) {
+	for (int i = 0; i < MAX_FD; i++) {
 		if (task->fds[i].fd == fd && i != fd) {
 			successor = i;
 			break;
@@ -298,7 +316,7 @@ task_inherit_fd (struct task *task, int fd) {
 	}
 
 	/* Update fd. */
-	for (size_t i = 0; i < MAX_FD; i++) {
+	for (int i = 0; i < MAX_FD; i++) {
 		if (task->fds[i].fd == fd && i != fd) {
 			task->fds[i].fd = successor;
 		}
@@ -320,4 +338,19 @@ fd_init (struct fd *fdt, fd_t fd) {
 	fdt->duplicated = false;
 	fdt->file = NULL;
 	fdt->stdio = -1;
+}
+
+int
+allocate_fd (void) {
+	struct task *task = task_find_by_tid (thread_tid ());
+	
+	int fd = -1;
+	for (int i = 3; i <= MAX_FD; i++) {
+		if (task->fds[i].closed && task->fds[i].dup_count == 0) {
+			fd = i;
+			break;
+		}
+	}
+
+	return fd;
 }

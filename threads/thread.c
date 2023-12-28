@@ -550,6 +550,18 @@ thread_increase_recent_cpu (struct thread* thrd) {
 	thrd->recent_cpu = addfi (thrd->recent_cpu, 1);
 }
 
+struct thread *
+thread_find (tid_t tid) {
+	struct list_elem *e = list_begin (&thread_list);
+	for (; e != list_end (&thread_list); e = list_next (e)) {
+		struct thread *t = list_entry (e, struct thread, telem);
+		if (t != NULL && t->tid == tid) {
+			return t;
+		}
+	}
+
+	return NULL;
+}
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by

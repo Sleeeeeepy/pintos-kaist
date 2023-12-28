@@ -14,10 +14,10 @@
 #include "userprog/process.h"
 #include "userprog/gdt.h"
 #include "userprog/task.h"
+#include "vm/cr.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "intrinsic.h"
-
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -36,10 +36,10 @@ static void syscall_seek (int fd, unsigned pos);
 static unsigned syscall_tell (int fd);
 static void syscall_close (int fd); 
 static int syscall_dup2 (int oldfd, int newfd);
+static void *syscall_mmap (void *addr, size_t length, bool writable, int fd, off_t offset);
+static void syscall_munmap (void *addr);
 static int64_t get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
-static int allocate_fd (void);
-
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -69,6 +69,7 @@ syscall_init (void) {
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
+	thread_current ()->intr_rsp = f->rsp;
 	switch (f->R.rax) {
 		case SYS_HALT:
 			syscall_halt ();
@@ -113,7 +114,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			syscall_close (f->R.rdi);
 			break;
 		case SYS_MMAP:
+			f->R.rax = syscall_mmap (f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
 		case SYS_MUNMAP:
+			syscall_munmap (f->R.rdi);
+			break;
 		case SYS_CHDIR:
 		case SYS_MKDIR:
 		case SYS_READDIR:
@@ -146,6 +151,14 @@ syscall_exit (int status) {
 
 static int
 syscall_fork (const char *thread_name, struct intr_frame *if_) {
+	if (!is_user_vaddr (thread_name)) {
+		task_exit (-1);
+	}
+
+	if (get_user (thread_name) == -1) {
+		task_exit (-1);
+	}
+
 	return process_fork (thread_name, if_);
 }
 
@@ -155,6 +168,10 @@ syscall_exec (const char *cmd_line) {
 	char* fn_copy;
 	if (task == NULL) {
 		return -1;
+	}
+
+	if (!is_user_vaddr (cmd_line)) {
+		task_exit (-1);
 	}
 
 	if (get_user (cmd_line) == -1) {
@@ -190,6 +207,10 @@ syscall_create (const char *file, unsigned initial_size) {
 		return -1;
 	}
 
+	if (!is_user_vaddr (file)) {
+		task_exit (-1);
+	}
+
 	if (get_user (file) == -1) {
 		task_exit (-1);
 	}
@@ -208,6 +229,10 @@ syscall_remove (const char *file) {
 		return -1;
 	}
 
+	if (!is_user_vaddr (file)) {
+		task_exit (-1);
+	}
+
 	if (get_user (file) == -1) {
 		task_exit (-1);
 	}
@@ -223,6 +248,10 @@ syscall_open (const char *file) {
 	struct task *task = task_find_by_tid (thread_tid ());
 	if (task == NULL) {
 		return -1;
+	}
+
+	if (!is_user_vaddr (file)) {
+		task_exit (-1);
 	}
 
 	if (get_user (file) == -1) {
@@ -283,15 +312,26 @@ syscall_read (int fd, void *buffer, unsigned size) {
 	}
 	
 	fd = task_find_fd_map (task, fd);
-
 	if (fd < 0 || fd >= MAX_FD) {
 		return -1;
+	}
+
+	if (!is_user_vaddr (buffer) || !is_user_vaddr (buffer + size)) {
+		task_exit (-1);
 	}
 
 	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
 		task_exit (-1);
 	}
 
+	wp_enable ();
+	if (!put_user (buffer, get_user (buffer)) || 
+		!put_user (buffer + size, get_user (buffer + size))) {
+		wp_disable ();
+		task_exit (-1);
+	}
+	wp_disable ();
+	
 	if (task->fds[fd].stdio == 0) {
 		for (size_t i = 0; i < size; i++) {
 			bool result = put_user (buffer + i, input_getc());
@@ -303,6 +343,7 @@ syscall_read (int fd, void *buffer, unsigned size) {
 		return size;
 	}
 
+	struct page *page;
 	if (task->fds[fd].closed || task->fds[fd].file == NULL) {
 		return -1;
 	}
@@ -320,12 +361,15 @@ syscall_write (int fd, void *buffer, unsigned size) {
 		return -1;
 	}
 
-	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
+	if (!is_user_vaddr (buffer) || !is_user_vaddr (buffer + size)) {
+		task_exit (-1);
+	}
+
+ 	if (get_user (buffer) == -1 || get_user (buffer + size) == -1) {
 		task_exit (-1);
 	}
 
 	fd = task_find_fd_map (task, fd);
-
 	if (fd < 0 || fd >= MAX_FD) {
 		return -1;
 	}
@@ -487,6 +531,59 @@ syscall_dup2 (int oldfd, int newfd) {
 	return newfd_copy;
 }
 
+static void *
+syscall_mmap (void *addr, size_t length, bool writable, int fd, off_t offset) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct task *task = task_find_by_tid (thread_tid ());
+	struct page *page;
+	if (addr == NULL || !is_user_vaddr (addr)) {
+		return NULL;
+	}
+
+	if ((uintptr_t) addr % PGSIZE != 0 || offset % PGSIZE != 0) {
+		return NULL;
+	}
+
+	if (length > 0 && addr > UINT64_MAX - length) {
+		return NULL;
+	}
+	
+	fd = task_find_fd_map (task, fd);
+	if (task->fds[fd].stdio != -1) {
+		task_exit (-1);
+	}
+
+	if (task->fds[fd].file == NULL) {
+		return NULL;
+	}
+
+	if (file_length (task->fds[fd].file) <= 0) {
+		return NULL;
+	}
+
+	if (file_length (task->fds[fd].file) <= offset) {
+		return NULL;
+	}
+	
+	if (length == 0) {
+		return NULL;
+	}
+
+	if ((page = spt_find_page (spt, addr)) != NULL) {
+		return NULL;
+	}
+
+	return do_mmap (addr, length, writable, file_reopen (task->fds[fd].file), offset);
+}
+
+static void
+syscall_munmap (void *addr) {
+	if ((uintptr_t) addr % PGSIZE != 0 || addr == NULL || !is_user_vaddr (addr)) {
+		return;
+	}
+
+	do_munmap (addr);
+}
 /* Reads a byte at user virtual address UADDR.
  * UADDR must be below KERN_BASE.
  * Returns the byte value if successful, -1 if a segfault
@@ -514,19 +611,4 @@ put_user (uint8_t *udst, uint8_t byte) {
 	"done_put:\n"
 	: "=&a" (error_code), "=m" (*udst) : "q" (byte));
 	return error_code != -1;
-}
-
-static int
-allocate_fd (void) {
-	struct task *task = task_find_by_tid (thread_tid ());
-	
-	int fd = -1;
-	for (int i = 3; i <= MAX_FD; i++) {
-		if (task->fds[i].closed && task->fds[i].dup_count == 0) {
-			fd = i;
-			break;
-		}
-	}
-
-	return fd;
 }

@@ -6,12 +6,12 @@
 #include "threads/synch.h"
 #include "userprog/task.h"
 
-struct load_segment_args {
+struct lazy_load_args {
     struct file *file;
     off_t offset;
     uint32_t read_bytes;
     uint32_t zero_bytes;
-    uint8_t *upage;
+    uint8_t *addr;
     bool writable;
 };
 

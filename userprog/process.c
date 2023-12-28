@@ -199,8 +199,9 @@ __do_fork (void *aux) {
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->thread->spt))
+	if (!supplemental_page_table_copy (&current->spt, &parent->thread->spt)) {
 		goto error;
+	}
 #else
 	if (!pml4_for_each (parent->thread->pml4, duplicate_pte, parent->thread))
 		goto error;
@@ -330,12 +331,12 @@ process_exit (void) {
 	if (task_child_len (task) != 0) {
 		task_inherit_initd (task);
 	}
-	
+
 	/* If there is no the parent process, then remove immediately. */
 	if (task->parent_pid < 0) {
 		task_free (task);
 	}
-
+	
 cleanup:
 	process_cleanup();
 }
@@ -747,11 +748,11 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	struct load_segment_args *args = aux;
+	struct lazy_load_args *args = aux;
 	struct file *file = task_find_by_tid (thread_tid ())->executable;
 	uint32_t page_read_bytes = args->read_bytes;
 	uint32_t page_zero_bytes = args->zero_bytes;
-	uint8_t *upage = args->upage;
+	uint8_t *upage = args->addr;
 	bool writable = args->writable;
 	bool error = false;
 	file_seek (file, args->offset);
@@ -764,7 +765,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	memset (page->frame->kva + page_read_bytes, 0, page_zero_bytes);
 
 cleanup:
-	// where to remove aux? 
+	// where to remove aux?
 	free (aux);
 	if (error) {
 		palloc_free_page (page->frame->kva);
@@ -801,13 +802,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		struct load_segment_args *aux = malloc (sizeof (struct load_segment_args));
-		*aux = (struct load_segment_args) {
+		struct lazy_load_args *aux = malloc (sizeof (struct lazy_load_args));
+		*aux = (struct lazy_load_args) {
 		 	.offset = ofs,
 			.read_bytes = page_read_bytes,
 			.zero_bytes = page_zero_bytes,
 			.writable = writable,
-			.upage = upage
+			.addr = upage
 		};
 		if (!vm_alloc_page_with_initializer (VM_ANON | VM_MARKER_1, upage,
 					writable, lazy_load_segment, (void *) aux))

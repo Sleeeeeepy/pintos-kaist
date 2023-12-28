@@ -4,6 +4,7 @@
 #include <hash.h>
 #include "threads/palloc.h"
 
+#define MAX_STACK_SIZE (1 << 20)	/* 1 MB */
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,
@@ -20,7 +21,7 @@ enum vm_type {
 	 * markers, until the value is fit in the int. */
 	VM_MARKER_0 = (1 << 3),
 	VM_MARKER_1 = (1 << 4),
-
+	VM_MARKER_2 = (1 << 5),
 	/* DO NOT EXCEED THIS VALUE. */
 	VM_MARKER_END = (1 << 31),
 };
@@ -47,9 +48,9 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
-	struct hash_elem elem;
-	bool writable;		   /* Is this page writable or not? */
-	bool swap;			   /* Is this page in swap disk? */
+	struct hash_elem elem; /* Hash element for spt. */
+	bool writable;         /* Is this page writable or not? */
+	int tid;
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
@@ -66,6 +67,9 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct list_elem elem;
+	struct list_elem felem;
+	int tid;
 };
 
 /* The function table for page operations.
@@ -112,5 +116,7 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
-
+struct frame *frame_get (void);
+void frame_return (struct frame *frame);
+void vm_free_frame (struct frame *frame, bool cleanup);
 #endif  /* VM_VM_H */

@@ -106,6 +106,8 @@ struct thread {
 	struct list_elem telem;				/* Thread list element. */
 	int nice;							/* Niceness */
 	fixed recent_cpu;					/* Recent CPU time. */
+	/* RSP in context changing. */
+	uintptr_t intr_rsp;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -166,7 +168,7 @@ fixed get_decay (void);
 void thread_update_priority_all (void);
 void thread_update_recent_cpu_all (void);
 void thread_increase_recent_cpu (struct thread* thrd);
-
+struct thread *thread_find (tid_t tid);
 void do_iret (struct intr_frame *tf);
 bool cmp_thrd_priorities (const struct list_elem *, 
 					const struct list_elem *, void *aux UNUSED);
